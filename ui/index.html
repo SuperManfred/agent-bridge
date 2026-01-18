@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Bridge — Rooms</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f2ea;
+        --panel: #ffffff;
+        --ink: #1f1c16;
+        --muted: #6a5f52;
+        --accent: #1b6c5f;
+        --accent-2: #c96f2c;
+        --border: #e4ddcf;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+        color: var(--ink);
+        background: radial-gradient(circle at top, #fff7e9 0%, var(--bg) 50%, #efe7da 100%);
+      }
+      header {
+        padding: 24px 20px 8px;
+        display: flex;
+        align-items: baseline;
+        gap: 16px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 28px;
+        letter-spacing: 0.5px;
+      }
+      .sub {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .status {
+        margin-left: auto;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+        background: #efe7da;
+        color: var(--muted);
+        border: 1px solid var(--border);
+      }
+      .status.streaming {
+        background: #e5f1ee;
+        color: var(--accent);
+        border-color: #cfe5e0;
+      }
+      .status.polling {
+        background: #f6e4d6;
+        color: var(--accent-2);
+        border-color: #ebd1be;
+      }
+      .status.idle {
+        background: #efe7da;
+        color: var(--muted);
+      }
+      main {
+        padding: 12px 20px 28px;
+        display: grid;
+        grid-template-columns: 280px 1fr;
+        gap: 16px;
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 12px;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+      }
+      .rooms {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        max-height: 60vh;
+        overflow: auto;
+      }
+      .room {
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid transparent;
+        cursor: pointer;
+      }
+      .room.active {
+        border-color: var(--accent);
+        background: #e5f1ee;
+      }
+      .room small {
+        display: block;
+        color: var(--muted);
+      }
+      .field {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      input, textarea, select, button {
+        font-family: inherit;
+        font-size: 14px;
+      }
+      input, textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      button {
+        border: none;
+        border-radius: 8px;
+        padding: 8px 12px;
+        background: var(--accent);
+        color: #fff;
+        cursor: pointer;
+      }
+      button.secondary {
+        background: var(--accent-2);
+      }
+      .events {
+        max-height: 60vh;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .event {
+        border-left: 3px solid var(--border);
+        padding-left: 10px;
+      }
+      .event .meta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .composer {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      /* Presence styling */
+      #presence {
+        min-height: 24px;
+        margin: 8px 0;
+        padding: 8px 12px;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+      }
+      #presence:empty {
+        display: none;
+      }
+      #presence.has-thinking {
+        background: linear-gradient(90deg, #fff7e9 0%, #f6e4d6 50%, #fff7e9 100%);
+        background-size: 200% 100%;
+        animation: thinking-pulse 2s ease-in-out infinite;
+        border: 1px solid var(--accent-2);
+        color: var(--accent-2);
+        font-weight: 500;
+      }
+      @keyframes thinking-pulse {
+        0% { background-position: 100% 0; }
+        50% { background-position: 0% 0; }
+        100% { background-position: 100% 0; }
+      }
+      .thinking-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 8px;
+      }
+      .thinking-indicator span {
+        width: 6px;
+        height: 6px;
+        background: var(--accent-2);
+        border-radius: 50%;
+        animation: typing-bounce 1.4s ease-in-out infinite;
+      }
+      .thinking-indicator span:nth-child(1) { animation-delay: 0s; }
+      .thinking-indicator span:nth-child(2) { animation-delay: 0.2s; }
+      .thinking-indicator span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes typing-bounce {
+        0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+        30% { transform: translateY(-4px); opacity: 1; }
+      }
+      @media (max-width: 900px) {
+        main { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Agent Bridge</h1>
+      <div class="sub">Phase 0 — rooms + audit log</div>
+      <div class="status idle" id="stream-status">Idle</div>
+    </header>
+    <main>
+      <section class="panel">
+        <div><strong>Rooms</strong></div>
+        <div class="rooms" id="rooms"></div>
+        <div class="field">
+          <input id="new-room-name" placeholder="New room name" />
+          <button id="create-room">Create</button>
+        </div>
+      </section>
+      <section class="panel">
+        <div><strong id="room-title">Select a room</strong></div>
+        <div class="sub" id="presence"></div>
+        <div class="events" id="events"></div>
+        <div class="composer">
+          <input id="from" placeholder="from (user/codex/claude-code/etc)" value="user" />
+          <input id="to" placeholder="to (all/codex/claude-code/etc)" value="all" />
+          <div class="sub">Tip: keep <code>to=all</code> and mention <code>@codex</code> / <code>@claude-code</code> (requires coordinator).</div>
+          <textarea id="content" rows="3" placeholder="Message"></textarea>
+          <button id="send">Send</button>
+        </div>
+      </section>
+    </main>
+    <script src="/ui/app.js"></script>
+  </body>
+</html>

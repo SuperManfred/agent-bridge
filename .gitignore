@@ -1,0 +1,18 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.Python
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Don't ignore conversations or experiments - we want the data
+
+# Coordinator local config/state (machine-specific)
+coordinator.config.json
+conversations/coordinator_state.json

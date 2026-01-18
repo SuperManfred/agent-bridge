@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>Label</key>
+    <string>com.agent-bridge.coordinator</string>
+
+    <key>ProgramArguments</key>
+    <array>
+      <string>/opt/homebrew/bin/python3</string>
+      <string>/Users/MN/GITHUB/.agent-bridge/coordinator.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/MN/GITHUB/.agent-bridge</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+      <key>PYTHONUNBUFFERED</key>
+      <string>1</string>
+      <key>BRIDGE_COORDINATOR_CONFIG</key>
+      <string>/Users/MN/GITHUB/.agent-bridge/coordinator.config.json</string>
+      <key>BRIDGE_COORDINATOR_STATE</key>
+      <string>/Users/MN/GITHUB/.agent-bridge/conversations/coordinator_state.json</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/agent-bridge-coordinator.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/agent-bridge-coordinator.err.log</string>
+  </dict>
+</plist>
+

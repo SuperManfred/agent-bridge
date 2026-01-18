@@ -1,0 +1,23 @@
+{
+  "bridge_url": "http://localhost:5111",
+  "coordinator_id": "bridge-coordinator",
+  "startup_mode": "end",
+  "max_reply_chars": 8000,
+  "context_window_size": 25,
+  "adapter_timeout_s": 600,
+  "poll_threads_s": 2,
+  "enable_mentions": true,
+  "mention_prefix": "@",
+  "mention_senders": ["user"],
+  "enable_broadcast": true,
+  "broadcast_senders": ["user"],
+  "broadcast_agents": [],
+  "agents": {
+    "claude-code": {
+      "command": ["./adapters/claude_code.sh"]
+    },
+    "codex": {
+      "command": ["./adapters/codex.sh"]
+    }
+  }
+}

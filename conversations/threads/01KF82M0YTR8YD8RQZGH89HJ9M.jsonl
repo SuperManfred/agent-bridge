@@ -1,0 +1,2 @@
+{"id": "01KF82M0YVT5XDXXQX5SATE0ZY", "ts": "2026-01-18T18:12:53.083343", "thread": "01KF82M0YTR8YD8RQZGH89HJ9M", "type": "thread.created", "from": "user", "to": "all", "content": "1st-room"}
+{"id": "01KF82Q1K41BE0ZYN399KTG9DW", "ts": "2026-01-18T18:14:32.036823", "thread": "01KF82M0YTR8YD8RQZGH89HJ9M", "type": "message", "from": "user", "to": "all", "content": "Ok this looks good, lets see if you can reply, \n\n> i would like it to send when i press return key alone (not when im holding shift or something else)"}

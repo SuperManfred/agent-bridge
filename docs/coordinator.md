@@ -1,0 +1,194 @@
+# Coordinator (Always-On)
+
+This document specifies the “always-on” component that removes the need for human nudging by watching thread events and invoking configured harnesses.
+
+Terminology note:
+- We use **coordinator** to avoid implying a hidden intermediary that speaks “for” participants.
+- The coordinator must behave as a **visible participant** when it writes to a thread.
+
+## Goal
+
+- When a message in a thread targets an agent (e.g., `to="claude-code"`), the system should be able to invoke that agent automatically and append its reply back into the same thread log.
+
+## Non-goals (v1 coordinator)
+
+- No “task/result” workflow layer (defer; v1 is `message/control/presence` only).
+- No attempt to drive already-running interactive UIs unless a harness exposes a stable API.
+- No hidden summarization; if any summary is produced, it must be appended as a visible message from the coordinator identity.
+
+## Operational rule (ironclad)
+
+If you are an agent/implementer participating in this project:
+- **Before making any code edits or taking any action that changes the repo, read the bridge thread first.**
+- Treat the thread as the coordination plane; do not “go off and implement” based only on local inference.
+
+## Trigger rules (v1)
+
+Given an incoming thread event `evt`:
+
+- The coordinator MUST ignore events where `evt.to == "user"`.
+- The coordinator SHOULD ignore events authored by the coordinator itself.
+- The coordinator SHOULD invoke the target participant when:
+  - `evt.type == "message"` AND `evt.to` matches a configured participant id.
+
+Practical implication:
+- If you want an agent to auto-respond, send a message with `to="<agent-id>"` (e.g., `to="codex"`).
+
+### Mentions (optional, recommended)
+
+To keep conversation flow natural, the coordinator MAY support “mentions” for broadcast messages:
+- If `evt.to == "all"` and the message content contains `@<agent-id>`, the coordinator will invoke that agent.
+- To prevent feedback loops, mention-triggering SHOULD be limited to messages from specific senders (default: `from="user"`).
+
+This avoids forcing the human to always fill a separate `to` field, while still preventing “everyone responds to everything.”
+
+### Broadcast (recommended for small threads)
+
+To make the system feel “alive” for small-group collaboration:
+- If `evt.to == "all"` and the message does **not** contain explicit mentions, the coordinator MAY invoke a configured set of agents automatically (default: all configured agents).
+- To prevent loops, broadcast-triggering SHOULD be limited to messages from specific senders (default: `from="user"`).
+
+## Discussion mode (opt-in, bounded policy loosening)
+
+By default, the coordinator treats agent-to-agent triggers as dangerous because they can create infinite loops.
+
+To allow more “human-like” collaboration (agents can tap in other agents), use an explicit control event in the thread:
+
+```json
+{
+  "type": "control",
+  "from": "user",
+  "to": "all",
+  "content": {
+    "discussion": {
+      "on": true,
+      "allow_agent_mentions": true
+    }
+  }
+}
+```
+
+Behavior (v1):
+- When `discussion.allow_agent_mentions` is enabled, agents MAY wake other agents via `@agent-id` mentions in `to="all"` messages.
+- Broadcast fanout (agents responding to every agent message) remains disabled unless explicitly configured.
+
+Optional (future):
+- react to `control` events like `prod`
+
+## Delivery model
+
+The coordinator delivers a targeted message to a participant by invoking an adapter for that participant.
+
+The adapter contract is:
+- input: `{thread_id, event_id, from, to, content, context_window}`
+- output: a text reply (stdout) and an exit code
+
+The coordinator then appends a new thread event:
+- `type="message"`
+- `from=<participant id>`
+- `to="all"`
+- `content=<adapter stdout (possibly truncated)>`
+- `meta.reply_to=<original event id>` (recommended)
+
+## Presence (v1)
+
+Presence/thinking/typing is **ephemeral by default**:
+- The coordinator MAY expose “agent is running” as ephemeral presence when the server supports it.
+- The coordinator MUST NOT spam the thread log with heartbeat/presence events.
+
+## Idempotency and reliability
+
+- At-least-once delivery is acceptable.
+- The coordinator SHOULD avoid duplicate invocations for the same event id.
+- Restart behavior: the coordinator SHOULD persist cursors per thread so it can resume without replaying the full history.
+
+### Startup mode
+
+To avoid replaying old messages on restart (which can feel like “spam”):
+- `startup_mode="end"` seeks to the latest event in every thread at startup and begins from there.
+- `startup_mode="resume"` preserves stored cursors and resumes from them.
+
+## Configuration
+
+The coordinator reads a local config file mapping participant ids to adapter commands.
+
+Proposed file:
+- `coordinator.config.json`
+
+Example:
+
+```json
+{
+  "bridge_url": "http://localhost:5111",
+  "coordinator_id": "bridge-coordinator",
+  "enable_mentions": true,
+  "mention_prefix": "@",
+  "mention_senders": ["user"],
+  "enable_broadcast": true,
+  "broadcast_senders": ["user"],
+  "broadcast_agents": [],
+  "agents": {
+    "claude-code": {
+      "command": ["./adapters/claude_code.sh"]
+    },
+    "codex": {
+      "command": ["./adapters/codex.sh"]
+    }
+  }
+}
+```
+
+Adapter commands are executed as subprocesses. They receive a JSON payload on stdin and must write the reply to stdout.
+
+Rationale:
+- Different harnesses have different invocation shapes; wrappers keep the coordinator generic.
+
+Note (shell aliases/functions):
+- The coordinator (especially under `launchd`) does not run inside your interactive shell.
+- Do not rely on shell aliases/functions like `codex_secure`; adapters should call real executables (e.g., `codex`, `claude`).
+
+## Testing
+
+This repo includes `adapters/echo.sh` as a trivial adapter for smoke-testing the coordinator loop without integrating a real harness.
+
+## Always-on on macOS (launchd)
+
+To keep the coordinator running without manual nudging:
+
+1) Copy and edit the example plist:
+- `launchd/com.agent-bridge.coordinator.plist.example`
+
+2) Install it:
+
+```bash
+cp launchd/com.agent-bridge.coordinator.plist.example ~/Library/LaunchAgents/com.agent-bridge.coordinator.plist
+launchctl load -w ~/Library/LaunchAgents/com.agent-bridge.coordinator.plist
+```
+
+3) Logs:
+- `/tmp/agent-bridge-coordinator.log`
+- `/tmp/agent-bridge-coordinator.err.log`
+
+## Always-on Agent Bridge server (launchd)
+
+The coordinator needs the bridge server running.
+
+1) Copy and edit:
+- `launchd/com.agent-bridge.server.plist.example`
+
+2) Install:
+
+```bash
+cp launchd/com.agent-bridge.server.plist.example ~/Library/LaunchAgents/com.agent-bridge.server.plist
+launchctl load -w ~/Library/LaunchAgents/com.agent-bridge.server.plist
+```
+
+3) Logs:
+- `/tmp/agent-bridge-server.log`
+- `/tmp/agent-bridge-server.err.log`
+
+## Security scope
+
+- Localhost only.
+- No auth assumed.
+- `from` is not a strong identity; the coordinator is a convenience mechanism, not a security boundary.
