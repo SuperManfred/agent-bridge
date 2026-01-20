@@ -16,6 +16,7 @@ Endpoints:
 """
 
 import json
+import os
 import secrets
 import sys
 import time
@@ -552,5 +553,12 @@ def ui_assets(path: str):
 
 if __name__ == "__main__":
     port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 5111
+    debug = False
+    if "--debug" in sys.argv:
+        debug = True
+    if "--no-debug" in sys.argv:
+        debug = False
+    if os.environ.get("AGENT_BRIDGE_DEBUG") is not None:
+        debug = os.environ.get("AGENT_BRIDGE_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
     print(f"Agent Bridge v0.3.0 on http://localhost:{port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=debug)
