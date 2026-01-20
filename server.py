@@ -248,6 +248,27 @@ def _error_409(code: str, message: str, thread_id: str, participant_id: str):
         }
     }), 409
 
+def get_thread_state_snapshot(thread_id: str) -> dict:
+    events = read_thread_events(thread_id)
+    state = _derive_thread_state(events)
+    muted = state.get("muted", set())
+    if not isinstance(muted, set):
+        muted = set()
+    discussion = state.get("discussion")
+    if not isinstance(discussion, dict):
+        discussion = {"on": False, "allow_agent_mentions": False}
+    return {
+        "thread": thread_id,
+        "state": {
+            "paused": bool(state.get("paused")),
+            "muted": sorted(muted),
+            "discussion": {
+                "on": bool(discussion.get("on")),
+                "allow_agent_mentions": bool(discussion.get("allow_agent_mentions")),
+            },
+        },
+    }
+
 def set_presence(thread_id: str, participant_id: str, state: str, details: dict | None = None) -> dict:
     now = datetime.now().isoformat()
     thread_presence = PRESENCE.setdefault(thread_id, {})
@@ -355,6 +376,10 @@ def create_thread():
 def get_thread_events(thread_id: str):
     events = read_thread_events(thread_id, since=request.args.get("since"))
     return jsonify({"events": events, "count": len(events)})
+
+@app.route("/threads/<thread_id>/state", methods=["GET"])
+def get_thread_state(thread_id: str):
+    return jsonify(get_thread_state_snapshot(thread_id))
 
 
 @app.route("/threads/<thread_id>/events", methods=["POST"])

@@ -6,6 +6,7 @@
   "context_window_size": 25,
   "adapter_timeout_s": 600,
   "poll_threads_s": 2,
+  "presence_heartbeat_s": 5,
   "enable_mentions": true,
   "mention_prefix": "@",
   "mention_senders": ["user"],
@@ -14,10 +15,20 @@
   "broadcast_agents": [],
   "agents": {
     "claude-code": {
-      "command": ["./adapters/claude_code.sh"]
+      "command": ["./adapters/claude_code.sh"],
+      "profile": {
+        "client": "claude",
+        "model": "claude-opus-4-5",
+        "roles": ["agent"]
+      }
     },
     "codex": {
-      "command": ["./adapters/codex.sh"]
+      "command": ["./adapters/codex.sh"],
+      "profile": {
+        "client": "codex",
+        "model": "gpt-5.2-codex",
+        "roles": ["agent"]
+      }
     }
   }
 }

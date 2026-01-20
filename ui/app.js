@@ -1,22 +1,19 @@
 const roomsEl = document.getElementById("rooms");
 const eventsEl = document.getElementById("events");
 const roomTitleEl = document.getElementById("room-title");
+const roomIdEl = document.getElementById("room-id");
 const newRoomInput = document.getElementById("new-room-name");
 const createRoomBtn = document.getElementById("create-room");
-const fromInput = document.getElementById("from");
-const toInput = document.getElementById("to");
+const toSelect = document.getElementById("to");
 const contentInput = document.getElementById("content");
 const sendBtn = document.getElementById("send");
 const streamStatusEl = document.getElementById("stream-status");
-const presenceEl = document.getElementById("presence");
 const errorEl = document.getElementById("send-error");
-const pauseBtn = document.getElementById("pause-thread");
-const resumeBtn = document.getElementById("resume-thread");
-const discussionOnBtn = document.getElementById("discussion-on");
-const discussionOffBtn = document.getElementById("discussion-off");
-const muteTargetInput = document.getElementById("mute-target");
-const muteBtn = document.getElementById("mute-participant");
-const unmuteBtn = document.getElementById("unmute-participant");
+const participantsEl = document.getElementById("participants");
+const badgePausedEl = document.getElementById("badge-paused");
+const badgeDiscussionEl = document.getElementById("badge-discussion");
+const togglePauseBtn = document.getElementById("toggle-pause");
+const toggleDiscussionBtn = document.getElementById("toggle-discussion");
 
 let currentRoomId = null;
 let lastEventTs = null;
@@ -25,6 +22,9 @@ let sse = null;
 let eventsCache = [];
 let fallbackTimer = null;
 let presenceTimer = null;
+let stateTimer = null;
+let latestPresence = null;
+let latestState = null;
 
 const STATUS_LABELS = {
   idle: "Idle",
@@ -43,7 +43,7 @@ function setStreamStatus(mode) {
   if (!streamStatusEl) return;
   const label = STATUS_LABELS[mode] || STATUS_LABELS.idle;
   streamStatusEl.textContent = label;
-  streamStatusEl.className = `status ${mode || "idle"}`;
+  streamStatusEl.className = `pill ${mode || "idle"}`;
 }
 
 async function fetchJson(path, options = {}) {
@@ -110,12 +110,14 @@ async function loadRooms() {
 async function selectRoom(room) {
   currentRoomId = room.id;
   roomTitleEl.textContent = room.name || "Untitled";
+  if (roomIdEl) roomIdEl.textContent = room.id || "";
   lastEventTs = null;
   minEventId = null;
   eventsCache = [];
   setStreamStatus("connecting");
   await loadEvents(true);
-  startPresencePolling();
+  await ensureUserPresence();
+  startRoomPolling();
   renderRooms((await fetchJson("/threads")).threads || []);
   const url = `${window.location.origin}/ui/rooms/${currentRoomId}`;
   window.history.replaceState({}, "", url);
@@ -143,60 +145,204 @@ function currentEventsFromDom() {
   return [];
 }
 
-function renderPresence(snapshot) {
-  if (!presenceEl) return;
-  const participants = (snapshot && snapshot.participants) || [];
-  if (!participants.length) {
-    presenceEl.innerHTML = "";
-    presenceEl.classList.remove("has-thinking");
-    return;
+function getProfileFromPresence(p) {
+  const details = (p && p.details && typeof p.details === "object") ? p.details : {};
+  const profile = (details && typeof details.profile === "object" && details.profile) ? details.profile : details;
+  const out = {...profile};
+  if (p && p.id === "user") {
+    out.client = out.client || "user";
+    out.model = out.model || "human";
   }
-  const thinkingAgents = participants.filter(p => !p.stale && p.state === "thinking");
-  const hasThinking = thinkingAgents.length > 0;
-
-  const parts = participants.map((p) => {
-    const state = p.stale ? "offline" : (p.state || "unknown");
-    const isThinking = !p.stale && state === "thinking";
-    const label = presenceLabel(p);
-    if (isThinking) {
-      return `<strong>${escapeHtml(label)}</strong> is thinking<span class="thinking-indicator"><span></span><span></span><span></span></span>`;
-    }
-    return `${escapeHtml(label)}: <code>${escapeHtml(state)}</code>`;
-  });
-
-  presenceEl.innerHTML = parts.join(" • ");
-  presenceEl.classList.toggle("has-thinking", hasThinking);
+  return out;
 }
 
-function presenceLabel(p) {
-  const details = (p && p.details) || {};
-  const profile = (details && typeof details.profile === "object" && details.profile) ? details.profile : details;
-  if (profile.nickname) return profile.nickname;
+function clientModelLabel(profile) {
   const client = profile.client;
   const model = profile.model;
-  if (client || model) {
-    return [client, model].filter(Boolean).join("/");
+  if (client && model) return `${client}/${model}`;
+  return client || model || "";
+}
+
+function displayTitle(profile, participantId) {
+  const nickname = profile.nickname;
+  if (nickname) return nickname;
+  const cm = clientModelLabel(profile);
+  return cm || participantId || "?";
+}
+
+function renderThreadState() {
+  const state = (latestState && latestState.state) || null;
+  const paused = !!(state && state.paused);
+  const discussion = (state && state.discussion) || {};
+  const discussionEnabled = !!(discussion.on && discussion.allow_agent_mentions);
+
+  if (badgePausedEl) badgePausedEl.classList.toggle("hidden", !paused);
+  if (badgeDiscussionEl) badgeDiscussionEl.classList.toggle("hidden", !discussionEnabled);
+
+  if (togglePauseBtn) {
+    togglePauseBtn.textContent = paused ? "Resume" : "Pause";
+    togglePauseBtn.disabled = !currentRoomId;
   }
-  return p.id || "?";
+  if (toggleDiscussionBtn) {
+    toggleDiscussionBtn.textContent = discussionEnabled ? "Discussion Off" : "Discussion On";
+    toggleDiscussionBtn.disabled = !currentRoomId;
+  }
+}
+
+function renderParticipants() {
+  if (!participantsEl) return;
+  const participants = (latestPresence && latestPresence.participants) || [];
+  const mutedList = (latestState && latestState.state && Array.isArray(latestState.state.muted)) ? latestState.state.muted : [];
+  const muted = new Set(mutedList);
+
+  participantsEl.innerHTML = "";
+  if (!participants.length) {
+    const empty = document.createElement("div");
+    empty.className = "p-meta";
+    empty.textContent = "No participants yet.";
+    participantsEl.appendChild(empty);
+    updateToOptions([]);
+    return;
+  }
+
+  participants.forEach((p) => {
+    const profile = getProfileFromPresence(p);
+    const participantId = p.id || "?";
+    const state = p.stale ? "offline" : (p.state || "unknown");
+    const isMuted = muted.has(participantId);
+
+    const row = document.createElement("div");
+    row.className = "participant";
+
+    const left = document.createElement("div");
+
+    const nameLine = document.createElement("div");
+    nameLine.className = "p-name";
+
+    const title = document.createElement("div");
+    title.className = "p-title";
+    title.textContent = displayTitle(profile, participantId);
+    nameLine.appendChild(title);
+
+    const idEl = document.createElement("div");
+    idEl.className = "p-id";
+    idEl.textContent = `@${participantId}`;
+    nameLine.appendChild(idEl);
+
+    left.appendChild(nameLine);
+
+    const meta = document.createElement("div");
+    meta.className = "p-meta";
+    const cm = clientModelLabel(profile);
+    if (cm) {
+      const cmChip = document.createElement("span");
+      cmChip.className = "chip";
+      cmChip.textContent = cm;
+      meta.appendChild(cmChip);
+    }
+    const roles = Array.isArray(profile.roles) ? profile.roles : [];
+    roles.forEach((role) => {
+      const r = String(role || "").trim();
+      if (!r) return;
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      chip.textContent = r;
+      meta.appendChild(chip);
+    });
+    if (isMuted) {
+      const mutedChip = document.createElement("span");
+      mutedChip.className = "chip muted-tag";
+      mutedChip.textContent = "muted";
+      meta.appendChild(mutedChip);
+    }
+    left.appendChild(meta);
+
+    const actions = document.createElement("div");
+    actions.className = "p-actions";
+
+    const stateBadge = document.createElement("span");
+    stateBadge.className = `state ${state}`;
+    stateBadge.textContent = state;
+    actions.appendChild(stateBadge);
+
+    const muteBtn = document.createElement("button");
+    muteBtn.type = "button";
+    muteBtn.dataset.participant = participantId;
+    muteBtn.dataset.action = isMuted ? "unmute" : "mute";
+    muteBtn.textContent = isMuted ? "Unmute" : "Mute";
+    muteBtn.className = isMuted ? "" : "danger";
+    muteBtn.disabled = !currentRoomId || participantId === "user";
+    actions.appendChild(muteBtn);
+
+    row.appendChild(left);
+    row.appendChild(actions);
+
+    participantsEl.appendChild(row);
+  });
+
+  updateToOptions(participants);
+}
+
+function updateToOptions(participants) {
+  if (!toSelect) return;
+  const previous = toSelect.value || "all";
+  toSelect.innerHTML = "";
+
+  const optAll = document.createElement("option");
+  optAll.value = "all";
+  optAll.textContent = "all (room)";
+  toSelect.appendChild(optAll);
+
+  participants.forEach((p) => {
+    const participantId = p.id;
+    if (!participantId) return;
+    const profile = getProfileFromPresence(p);
+    const label = displayTitle(profile, participantId);
+    const opt = document.createElement("option");
+    opt.value = participantId;
+    opt.textContent = `direct: ${label} (@${participantId})`;
+    toSelect.appendChild(opt);
+  });
+
+  // Restore selection if possible; otherwise default to all.
+  const hasPrev = Array.from(toSelect.options).some((o) => o.value === previous);
+  toSelect.value = hasPrev ? previous : "all";
 }
 
 async function loadPresence() {
   if (!currentRoomId) return;
   try {
-    const snapshot = await fetchJson(`/threads/${currentRoomId}/presence`);
-    renderPresence(snapshot);
+    latestPresence = await fetchJson(`/threads/${currentRoomId}/presence`);
+    renderParticipants();
   } catch {
-    // Presence is optional; fail silently.
+    // Presence is best-effort.
   }
 }
 
-function startPresencePolling() {
-  if (presenceTimer) {
-    clearInterval(presenceTimer);
-    presenceTimer = null;
-  }
+async function loadThreadState() {
   if (!currentRoomId) return;
+  try {
+    latestState = await fetchJson(`/threads/${currentRoomId}/state`);
+    renderThreadState();
+    renderParticipants();
+  } catch {
+    // State is best-effort.
+  }
+}
+
+function startRoomPolling() {
+  if (presenceTimer) clearInterval(presenceTimer);
+  if (stateTimer) clearInterval(stateTimer);
+  presenceTimer = null;
+  stateTimer = null;
+  latestPresence = null;
+  latestState = null;
+  renderThreadState();
+  renderParticipants();
+  if (!currentRoomId) return;
+  loadThreadState();
   loadPresence();
+  stateTimer = setInterval(loadThreadState, 2000);
   presenceTimer = setInterval(loadPresence, 2000);
 }
 
@@ -208,10 +354,6 @@ function stopStream() {
   if (fallbackTimer) {
     clearInterval(fallbackTimer);
     fallbackTimer = null;
-  }
-  if (presenceTimer) {
-    clearInterval(presenceTimer);
-    presenceTimer = null;
   }
   if (!currentRoomId) {
     setStreamStatus("idle");
@@ -259,7 +401,7 @@ async function createRoom() {
   const room = await fetchJson("/threads", {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({name, from: fromInput.value.trim() || "user"})
+    body: JSON.stringify({name, from: "user"})
   });
   newRoomInput.value = "";
   await loadRooms();
@@ -270,8 +412,8 @@ async function sendMessage() {
   if (!currentRoomId) return;
   const content = contentInput.value.trim();
   if (!content) return;
-  const from = fromInput.value.trim() || "user";
-  const to = (toInput && toInput.value.trim()) || "all";
+  const from = "user";
+  const to = (toSelect && toSelect.value) || "all";
   try {
     await fetchJson(`/threads/${currentRoomId}/events`, {
       method: "POST",
@@ -328,63 +470,65 @@ async function sendControlEvent(content) {
   }
 }
 
-pauseBtn?.addEventListener("click", () => {
-  sendControlEvent({pause: {on: true}});
+togglePauseBtn?.addEventListener("click", () => {
+  const paused = !!(latestState && latestState.state && latestState.state.paused);
+  sendControlEvent({pause: {on: !paused}}).then(loadThreadState);
 });
-resumeBtn?.addEventListener("click", () => {
-  sendControlEvent({pause: {on: false}});
+toggleDiscussionBtn?.addEventListener("click", () => {
+  const discussion = (latestState && latestState.state && latestState.state.discussion) || {};
+  const enabled = !!(discussion.on && discussion.allow_agent_mentions);
+  sendControlEvent({discussion: {on: !enabled, allow_agent_mentions: !enabled}}).then(loadThreadState);
 });
-discussionOnBtn?.addEventListener("click", () => {
-  sendControlEvent({discussion: {on: true, allow_agent_mentions: true}});
-});
-discussionOffBtn?.addEventListener("click", () => {
-  sendControlEvent({discussion: {on: false, allow_agent_mentions: false}});
-});
-muteBtn?.addEventListener("click", () => {
-  const target = muteTargetInput?.value.trim();
-  if (!target) {
-    showError("Mute requires a participant id.");
-    return;
+
+participantsEl?.addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-participant][data-action]");
+  if (!btn) return;
+  const participant = btn.dataset.participant;
+  const action = btn.dataset.action;
+  if (!participant) return;
+  if (action === "mute") {
+    sendControlEvent({mute: {targets: [participant], mode: "hard"}}).then(loadThreadState);
+  } else if (action === "unmute") {
+    sendControlEvent({unmute: {targets: [participant]}}).then(loadThreadState);
   }
-  sendControlEvent({mute: {targets: [target], mode: "hard"}});
-});
-unmuteBtn?.addEventListener("click", () => {
-  const target = muteTargetInput?.value.trim();
-  if (!target) {
-    showError("Unmute requires a participant id.");
-    return;
-  }
-  sendControlEvent({unmute: {targets: [target]}});
 });
 
 // User typing indicator
 let typingTimeout = null;
 let isTyping = false;
 
-async function setTypingPresence(state) {
+async function postPresence(state, details = null) {
   if (!currentRoomId) return;
-  const from = fromInput.value.trim() || "user";
   try {
+    const payload = {from: "user", state};
+    if (details && typeof details === "object") {
+      payload.details = details;
+    }
     await fetchJson(`/threads/${currentRoomId}/presence`, {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({from, state})
+      body: JSON.stringify(payload)
     });
   } catch (e) {
     // Presence is best-effort; ignore failures
   }
 }
 
+async function ensureUserPresence() {
+  if (!currentRoomId) return;
+  await postPresence("listening", {client: "user", model: "human"});
+}
+
 function handleTypingStart() {
   if (!isTyping) {
     isTyping = true;
-    setTypingPresence("typing");
+    postPresence("typing", {client: "user", model: "human"});
   }
   // Reset idle timeout
   if (typingTimeout) clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
     isTyping = false;
-    setTypingPresence("listening");
+    postPresence("listening");
   }, 3000); // Mark listening after 3s of no typing
 }
 
@@ -392,13 +536,22 @@ function handleTypingStop() {
   if (typingTimeout) clearTimeout(typingTimeout);
   if (isTyping) {
     isTyping = false;
-    setTypingPresence("listening");
+    postPresence("listening");
   }
 }
 
 contentInput.addEventListener("input", handleTypingStart);
-contentInput.addEventListener("focus", handleTypingStart);
+contentInput.addEventListener("focus", () => {
+  if (!isTyping) {
+    postPresence("listening");
+  }
+});
 contentInput.addEventListener("blur", handleTypingStop);
+
+// Defaults
+updateToOptions([]);
+renderThreadState();
+renderParticipants();
 
 loadRooms();
 const pathMatch = window.location.pathname.match(/\/ui\/rooms\/([^/]+)(?:\/messages\/([^/]+))?/);

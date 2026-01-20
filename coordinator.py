@@ -38,6 +38,7 @@ class AgentConfig:
     command: list[str]
     cwd: str | None = None
     env: dict[str, str] | None = None
+    profile: dict[str, Any] | None = None
 
 
 def _http_json(method: str, url: str, payload: dict[str, Any] | None = None, timeout_s: int = 10) -> Any:
@@ -358,12 +359,21 @@ def _run_agent_adapter(agent_id: str, cfg: AgentConfig, payload: dict[str, Any],
     )
     return proc.returncode, proc.stdout.decode("utf-8", errors="replace"), proc.stderr.decode("utf-8", errors="replace")
 
-def _post_presence(bridge_url: str, thread_id: str, participant_id: str, state: str) -> None:
+def _post_presence(
+    bridge_url: str,
+    thread_id: str,
+    participant_id: str,
+    state: str,
+    details: dict[str, Any] | None = None,
+) -> None:
     try:
+        payload: dict[str, Any] = {"from": participant_id, "state": state}
+        if details is not None:
+            payload["details"] = details
         _http_json(
             "POST",
             bridge_url.rstrip("/") + f"/threads/{thread_id}/presence",
-            payload={"from": participant_id, "state": state},
+            payload=payload,
             timeout_s=2,
         )
     except Exception:
@@ -397,6 +407,9 @@ def main() -> int:
     broadcast_agents = cfg_raw.get("broadcast_agents", [])
     if not isinstance(broadcast_agents, list) or not all(isinstance(x, str) for x in broadcast_agents):
         broadcast_agents = []
+    presence_heartbeat_s = float(cfg_raw.get("presence_heartbeat_s", 10))
+    if presence_heartbeat_s < 0:
+        presence_heartbeat_s = 10
 
     agents_raw = cfg_raw.get("agents", {})
     agents: dict[str, AgentConfig] = {}
@@ -407,10 +420,22 @@ def main() -> int:
             cmd = a.get("command")
             if not isinstance(cmd, list) or not all(isinstance(x, str) and x for x in cmd):
                 continue
+            profile = a.get("profile")
+            profile_out: dict[str, Any] | None = None
+            if isinstance(profile, dict):
+                profile_out = {}
+                for k in ("client", "model", "nickname"):
+                    v = profile.get(k)
+                    if isinstance(v, str) and v.strip():
+                        profile_out[k] = v.strip()
+                roles = profile.get("roles")
+                if isinstance(roles, list):
+                    profile_out["roles"] = [str(r).strip() for r in roles if str(r).strip()]
             agents[str(agent_id)] = AgentConfig(
                 command=[str(x) for x in cmd],
                 cwd=str(a["cwd"]) if "cwd" in a and a["cwd"] is not None else None,
                 env={str(k): str(v) for k, v in (a.get("env") or {}).items()} if isinstance(a.get("env"), dict) else None,
+                profile=profile_out,
             )
 
     if not agents:
@@ -424,6 +449,8 @@ def main() -> int:
         state["threads"] = {}
 
     processed_ids: dict[str, set[str]] = {}
+    active_invocations: set[tuple[str, str]] = set()
+    last_presence_heartbeat = 0.0
 
     print(f"[{_now_iso()}] coordinator starting", flush=True)
     print(f"- bridge_url: {bridge_url}", flush=True)
@@ -464,6 +491,27 @@ def main() -> int:
             print(f"[{_now_iso()}] error listing threads: {e}", file=sys.stderr, flush=True)
             time.sleep(2)
             continue
+
+        now_s = time.time()
+        if presence_heartbeat_s and now_s - last_presence_heartbeat >= presence_heartbeat_s:
+            for t in threads:
+                thread_id = t.get("id")
+                if not isinstance(thread_id, str) or not thread_id:
+                    continue
+                # Make agents visible in every thread by default (local-first UX).
+                for agent_id, agent_cfg in agents.items():
+                    if (thread_id, agent_id) in active_invocations:
+                        continue
+                    details = agent_cfg.profile if agent_cfg.profile else None
+                    _post_presence(bridge_url, thread_id, agent_id, "listening", details=details)
+                _post_presence(
+                    bridge_url,
+                    thread_id,
+                    coordinator_id,
+                    "listening",
+                    details={"client": "agent-bridge", "model": "coordinator", "nickname": "coordinator"},
+                )
+            last_presence_heartbeat = now_s
 
         for t in threads:
             thread_id = t.get("id")
@@ -632,6 +680,7 @@ def main() -> int:
                     }
 
                     print(f"[{_now_iso()}] invoke {agent_id} for thread={thread_id} event={evt_id}", flush=True)
+                    active_invocations.add((thread_id, agent_id))
                     _post_presence(bridge_url, thread_id, agent_id, "thinking")
                     try:
                         rc, out, err = _run_agent_adapter(agent_id, agent_cfg, adapter_payload, timeout_s=adapter_timeout_s)
@@ -640,6 +689,7 @@ def main() -> int:
                     except Exception as e:
                         rc, out, err = 125, "", f"adapter error: {e}"
                     finally:
+                        active_invocations.discard((thread_id, agent_id))
                         _post_presence(bridge_url, thread_id, agent_id, "listening")
 
                     if rc == 0:

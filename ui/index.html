@@ -3,256 +3,324 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Agent Bridge — Rooms</title>
+    <title>Agent Bridge</title>
     <style>
       :root {
         color-scheme: light;
-        --bg: #f6f2ea;
-        --panel: #ffffff;
-        --ink: #1f1c16;
-        --muted: #6a5f52;
-        --accent: #1b6c5f;
-        --accent-2: #c96f2c;
-        --border: #e4ddcf;
+        --bg: #0b0f14;
+        --panel: #0f1620;
+        --panel-2: #0d131c;
+        --ink: #e9eef5;
+        --muted: #9fb0c4;
+        --border: rgba(255, 255, 255, 0.10);
+        --shadow: rgba(0, 0, 0, 0.35);
+        --accent: #4da3ff;
+        --good: #35d07f;
+        --warn: #ffb020;
+        --bad: #ff5b5b;
+        --btn: rgba(255, 255, 255, 0.12);
+        --btn-2: rgba(255, 255, 255, 0.18);
       }
       * { box-sizing: border-box; }
+      html, body { height: 100%; }
       body {
         margin: 0;
-        font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(800px 500px at 20% 0%, rgba(77,163,255,0.18), transparent 60%),
+                    radial-gradient(900px 600px at 80% 0%, rgba(53,208,127,0.12), transparent 55%),
+                    var(--bg);
         color: var(--ink);
-        background: radial-gradient(circle at top, #fff7e9 0%, var(--bg) 50%, #efe7da 100%);
       }
       header {
-        padding: 24px 20px 8px;
         display: flex;
-        align-items: baseline;
-        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
       }
-      h1 {
-        margin: 0;
-        font-size: 28px;
-        letter-spacing: 0.5px;
+      .brand {
+        font-weight: 650;
+        letter-spacing: 0.2px;
       }
-      .sub {
-        color: var(--muted);
-        font-size: 14px;
-      }
-      .status {
-        margin-left: auto;
-        padding: 4px 10px;
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
         border-radius: 999px;
-        font-size: 12px;
-        letter-spacing: 0.3px;
-        text-transform: uppercase;
-        background: #efe7da;
-        color: var(--muted);
         border: 1px solid var(--border);
-      }
-      .status.streaming {
-        background: #e5f1ee;
-        color: var(--accent);
-        border-color: #cfe5e0;
-      }
-      .status.polling {
-        background: #f6e4d6;
-        color: var(--accent-2);
-        border-color: #ebd1be;
-      }
-      .status.idle {
-        background: #efe7da;
+        background: rgba(255,255,255,0.06);
         color: var(--muted);
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
       }
+      .pill.streaming { color: var(--good); border-color: rgba(53,208,127,0.35); background: rgba(53,208,127,0.10); }
+      .pill.polling { color: var(--warn); border-color: rgba(255,176,32,0.35); background: rgba(255,176,32,0.10); }
+      .pill.connecting { color: var(--accent); border-color: rgba(77,163,255,0.35); background: rgba(77,163,255,0.10); }
       main {
-        padding: 12px 20px 28px;
+        height: calc(100% - 56px);
+        padding: 0 18px 18px;
         display: grid;
-        grid-template-columns: 280px 1fr;
-        gap: 16px;
+        grid-template-columns: 300px 1fr;
+        gap: 14px;
       }
       .panel {
-        background: var(--panel);
+        background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
         border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 12px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.04);
+        border-radius: 14px;
+        box-shadow: 0 14px 40px var(--shadow);
+        overflow: hidden;
       }
+      .panel-head {
+        padding: 12px 12px 10px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(0,0,0,0.15);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .panel-title { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
       .rooms {
+        padding: 10px;
         display: flex;
         flex-direction: column;
         gap: 8px;
-        max-height: 60vh;
+        max-height: calc(100% - 92px);
         overflow: auto;
       }
       .room {
-        padding: 8px 10px;
-        border-radius: 8px;
         border: 1px solid transparent;
+        border-radius: 12px;
+        padding: 10px 10px 9px;
+        background: rgba(0,0,0,0.10);
         cursor: pointer;
       }
-      .room.active {
-        border-color: var(--accent);
-        background: #e5f1ee;
-      }
-      .room small {
-        display: block;
-        color: var(--muted);
-      }
-      .field {
-        display: flex;
+      .room:hover { border-color: rgba(255,255,255,0.14); }
+      .room.active { border-color: rgba(77,163,255,0.45); background: rgba(77,163,255,0.10); }
+      .room small { display: block; color: var(--muted); margin-top: 3px; font-size: 12px; }
+      .new-room {
+        padding: 10px;
+        border-top: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 1fr auto;
         gap: 8px;
-        margin-top: 10px;
+        background: rgba(0,0,0,0.12);
       }
-      input, textarea, select, button {
-        font-family: inherit;
-        font-size: 14px;
-      }
-      input, textarea {
+      input, textarea, select, button { font: inherit; }
+      input, textarea, select {
         width: 100%;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(0,0,0,0.18);
+        color: var(--ink);
+        padding: 10px 10px;
+        outline: none;
       }
+      textarea { resize: vertical; min-height: 70px; }
       button {
-        border: none;
-        border-radius: 8px;
-        padding: 8px 12px;
-        background: var(--accent);
-        color: #fff;
+        border: 1px solid rgba(255,255,255,0.14);
+        background: var(--btn);
+        color: var(--ink);
+        padding: 10px 12px;
+        border-radius: 12px;
         cursor: pointer;
+        font-weight: 600;
       }
-      button.secondary {
-        background: var(--accent-2);
+      button:hover { background: var(--btn-2); }
+      button.primary { border-color: rgba(77,163,255,0.45); background: rgba(77,163,255,0.18); }
+      button.primary:hover { background: rgba(77,163,255,0.26); }
+      button.danger { border-color: rgba(255,91,91,0.45); background: rgba(255,91,91,0.14); }
+      button.danger:hover { background: rgba(255,91,91,0.20); }
+      button:disabled { opacity: 0.55; cursor: not-allowed; }
+      .room-panel { display: flex; flex-direction: column; }
+      .room-top {
+        padding: 12px;
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(0,0,0,0.14);
+      }
+      .room-title {
+        font-size: 18px;
+        font-weight: 650;
+        margin: 0;
+      }
+      .room-id { color: var(--muted); font-size: 12px; margin-top: 3px; }
+      .badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+      .badge {
+        font-size: 12px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(0,0,0,0.18);
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+      .badge.hidden { display: none; }
+      .badge.paused { color: var(--warn); border-color: rgba(255,176,32,0.35); background: rgba(255,176,32,0.10); }
+      .badge.discussion { color: var(--good); border-color: rgba(53,208,127,0.35); background: rgba(53,208,127,0.10); }
+      .room-body {
+        flex: 1;
+        display: grid;
+        grid-template-columns: 1fr 360px;
+        min-height: 0;
+      }
+      .messages {
+        padding: 12px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 10px;
+        min-height: 0;
       }
       .events {
-        max-height: 60vh;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(0,0,0,0.14);
+        padding: 10px;
         overflow: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
+        min-height: 0;
       }
       .event {
-        border-left: 3px solid var(--border);
+        border-left: 2px solid rgba(255,255,255,0.10);
         padding-left: 10px;
+        margin: 8px 0;
       }
-      .event .meta {
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .composer {
-        display: grid;
-        gap: 8px;
-        margin-top: 12px;
-      }
-      .controls {
-        display: grid;
-        gap: 8px;
-        margin-top: 10px;
-      }
-      .control-row {
-        display: flex;
-        gap: 8px;
-        flex-wrap: wrap;
-      }
+      .event .meta { color: var(--muted); font-size: 12px; }
+      .composer { display: grid; gap: 8px; }
+      .composer .row { display: grid; grid-template-columns: 60px 1fr; gap: 10px; align-items: center; }
+      .hint { grid-column: 2 / span 1; color: var(--muted); font-size: 12px; }
       .error {
         display: none;
-        padding: 8px 10px;
-        border-radius: 8px;
-        background: #f6e4d6;
-        color: #8a3b12;
-        border: 1px solid #ebc4aa;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,91,91,0.35);
+        background: rgba(255,91,91,0.12);
+        color: #ffd1d1;
         font-size: 13px;
       }
-      .error.visible {
-        display: block;
+      .error.visible { display: block; }
+      .sidebar {
+        border-left: 1px solid var(--border);
+        background: rgba(0,0,0,0.10);
+        padding: 12px;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        gap: 12px;
+        min-height: 0;
       }
-      /* Presence styling */
-      #presence {
-        min-height: 24px;
-        margin: 8px 0;
-        padding: 8px 12px;
-        border-radius: 8px;
-        transition: all 0.3s ease;
+      .section-title { color: var(--muted); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+      .thread-controls { display: grid; gap: 8px; }
+      .participants {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(0,0,0,0.14);
+        overflow: auto;
+        padding: 8px;
+        min-height: 0;
       }
-      #presence:empty {
-        display: none;
-      }
-      #presence.has-thinking {
-        background: linear-gradient(90deg, #fff7e9 0%, #f6e4d6 50%, #fff7e9 100%);
-        background-size: 200% 100%;
-        animation: thinking-pulse 2s ease-in-out infinite;
-        border: 1px solid var(--accent-2);
-        color: var(--accent-2);
-        font-weight: 500;
-      }
-      @keyframes thinking-pulse {
-        0% { background-position: 100% 0; }
-        50% { background-position: 0% 0; }
-        100% { background-position: 100% 0; }
-      }
-      .thinking-indicator {
-        display: inline-flex;
+      .participant {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
         align-items: center;
-        gap: 4px;
-        margin-left: 8px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(0,0,0,0.10);
+        border-radius: 12px;
+        padding: 9px 10px;
+        margin: 8px 0;
       }
-      .thinking-indicator span {
-        width: 6px;
-        height: 6px;
-        background: var(--accent-2);
-        border-radius: 50%;
-        animation: typing-bounce 1.4s ease-in-out infinite;
+      .participant:first-child { margin-top: 0; }
+      .participant:last-child { margin-bottom: 0; }
+      .p-name { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+      .p-title { font-weight: 650; }
+      .p-id { color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .p-meta { color: var(--muted); font-size: 12px; margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; }
+      .chip {
+        font-size: 11px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(255,255,255,0.06);
+        color: var(--muted);
       }
-      .thinking-indicator span:nth-child(1) { animation-delay: 0s; }
-      .thinking-indicator span:nth-child(2) { animation-delay: 0.2s; }
-      .thinking-indicator span:nth-child(3) { animation-delay: 0.4s; }
-      @keyframes typing-bounce {
-        0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-        30% { transform: translateY(-4px); opacity: 1; }
+      .state {
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.10);
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
       }
-      @media (max-width: 900px) {
-        main { grid-template-columns: 1fr; }
+      .state.listening { color: var(--good); border-color: rgba(53,208,127,0.35); background: rgba(53,208,127,0.10); }
+      .state.thinking { color: var(--warn); border-color: rgba(255,176,32,0.35); background: rgba(255,176,32,0.10); }
+      .state.typing { color: var(--accent); border-color: rgba(77,163,255,0.35); background: rgba(77,163,255,0.10); }
+      .state.idle, .state.offline, .state.unknown { color: var(--muted); }
+      .muted-tag { color: var(--bad); border-color: rgba(255,91,91,0.35); background: rgba(255,91,91,0.10); }
+      .p-actions { display: flex; align-items: center; gap: 8px; }
+      @media (max-width: 1050px) {
+        main { grid-template-columns: 1fr; height: auto; }
+        .room-body { grid-template-columns: 1fr; }
+        .sidebar { border-left: none; border-top: 1px solid var(--border); grid-template-rows: auto auto; }
       }
     </style>
   </head>
   <body>
     <header>
-      <h1>Agent Bridge</h1>
-      <div class="sub">Phase 0 — rooms + audit log</div>
-      <div class="status idle" id="stream-status">Idle</div>
+      <div class="brand">Agent Bridge</div>
+      <div id="stream-status" class="pill">Idle</div>
     </header>
     <main>
-      <section class="panel">
-        <div><strong>Rooms</strong></div>
-        <div class="rooms" id="rooms"></div>
-        <div class="field">
-          <input id="new-room-name" placeholder="New room name" />
-          <button id="create-room">Create</button>
+      <aside class="panel">
+        <div class="panel-head">
+          <div class="panel-title">Rooms</div>
         </div>
-      </section>
-      <section class="panel">
-        <div><strong id="room-title">Select a room</strong></div>
-        <div class="sub" id="presence"></div>
-        <div class="error" id="send-error"></div>
-        <div class="events" id="events"></div>
-        <div class="composer">
-          <input id="from" placeholder="from (user/codex/claude-code/etc)" value="user" />
-          <input id="to" placeholder="to (all/codex/claude-code/etc)" value="all" />
-          <div class="sub">Tip: keep <code>to=all</code> and mention <code>@codex</code> / <code>@claude-code</code> (requires coordinator).</div>
-          <div class="controls">
-            <div class="sub">Thread controls</div>
-            <div class="control-row">
-              <button id="pause-thread" class="secondary">Pause</button>
-              <button id="resume-thread">Resume</button>
-              <button id="discussion-on" class="secondary">Discussion On</button>
-              <button id="discussion-off">Discussion Off</button>
-            </div>
-            <div class="control-row">
-              <input id="mute-target" placeholder="participant id to mute/unmute" />
-              <button id="mute-participant" class="secondary">Mute</button>
-              <button id="unmute-participant">Unmute</button>
+        <div class="rooms" id="rooms"></div>
+        <div class="new-room">
+          <input id="new-room-name" placeholder="New room name" />
+          <button id="create-room" class="primary">Create</button>
+        </div>
+      </aside>
+      <section class="panel room-panel">
+        <div class="room-top">
+          <div>
+            <div class="room-title" id="room-title">Select a room</div>
+            <div class="room-id" id="room-id"></div>
+          </div>
+          <div class="badges">
+            <span id="badge-paused" class="badge paused hidden">Paused</span>
+            <span id="badge-discussion" class="badge discussion hidden">Discussion</span>
+          </div>
+        </div>
+        <div class="room-body">
+          <div class="messages">
+            <div class="error" id="send-error"></div>
+            <div class="events" id="events"></div>
+            <div class="composer">
+              <div class="row">
+                <div class="panel-title">To</div>
+                <select id="to"></select>
+                <div class="hint">Tip: keep <code>to=all</code> and use <code>@mentions</code>.</div>
+              </div>
+              <textarea id="content" placeholder="Message"></textarea>
+              <button id="send" class="primary">Send</button>
             </div>
           </div>
-          <textarea id="content" rows="3" placeholder="Message"></textarea>
-          <button id="send">Send</button>
+          <aside class="sidebar">
+            <div>
+              <div class="section-title">Thread</div>
+              <div class="thread-controls">
+                <button id="toggle-pause">Pause</button>
+                <button id="toggle-discussion">Discussion Off</button>
+              </div>
+            </div>
+            <div>
+              <div class="section-title">Participants</div>
+              <div id="participants" class="participants"></div>
+            </div>
+          </aside>
         </div>
       </section>
     </main>
