@@ -9,7 +9,7 @@
   "enable_mentions": true,
   "mention_prefix": "@",
   "mention_senders": ["user"],
-  "enable_broadcast": true,
+  "enable_broadcast": false,
   "broadcast_senders": ["user"],
   "broadcast_agents": [],
   "agents": {

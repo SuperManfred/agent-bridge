@@ -97,37 +97,181 @@ def _extract_mentions(content: Any, mention_prefix: str) -> set[str]:
                 mentions.add(mention.lower())
     return mentions
 
-def _thread_discussion_policy(events: list[dict[str, Any]]) -> dict[str, Any]:
-    """
-    Derive discussion policy from append-only control events.
+def _parse_control_content(evt: dict[str, Any]) -> dict[str, Any] | None:
+    content = evt.get("content")
+    if isinstance(content, str) and content.strip().startswith("{"):
+        try:
+            content = json.loads(content)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(content, dict):
+        return None
+    return content
 
-    Expected control content shape (recommended):
-      {"discussion": {"on": true, "allow_agent_mentions": true}}
+def _default_control_state() -> dict[str, Any]:
+    return {
+        "paused": False,
+        "muted": set(),
+        "discussion": {"on": False, "allow_agent_mentions": False},
+    }
 
-    The latest matching control event wins.
-    """
-    policy = {"on": False, "allow_agent_mentions": False}
-    for evt in reversed(events):
-        if not isinstance(evt, dict):
-            continue
-        if str(evt.get("type") or "") != "control":
-            continue
-        content = evt.get("content")
-        if isinstance(content, str) and content.strip().startswith("{"):
-            try:
-                content = json.loads(content)
-            except json.JSONDecodeError:
-                continue
-        if not isinstance(content, dict):
-            continue
-        discussion = content.get("discussion")
-        if not isinstance(discussion, dict):
-            continue
+def _apply_control_content_to_state(state: dict[str, Any], content: dict[str, Any]) -> None:
+    # Mute/unmute are incremental so multiple participants can be muted.
+    mute = content.get("mute")
+    if isinstance(mute, dict):
+        mode = str(mute.get("mode") or "hard")
+        targets = mute.get("targets")
+        if mode == "hard" and isinstance(targets, list):
+            muted: set[str] = state.setdefault("muted", set())
+            for t in targets:
+                participant_id = str(t).strip()
+                if participant_id:
+                    muted.add(participant_id)
+
+    unmute = content.get("unmute")
+    if isinstance(unmute, dict):
+        targets = unmute.get("targets")
+        if isinstance(targets, list):
+            muted = state.setdefault("muted", set())
+            for t in targets:
+                participant_id = str(t).strip()
+                if participant_id:
+                    muted.discard(participant_id)
+
+    # Pause/discussion are last-write-wins.
+    pause = content.get("pause")
+    if isinstance(pause, dict):
+        state["paused"] = bool(pause.get("on", True))
+
+    discussion = content.get("discussion")
+    if isinstance(discussion, dict):
         on = bool(discussion.get("on", True))
         allow_agent_mentions = bool(discussion.get("allow_agent_mentions", on))
-        policy = {"on": on, "allow_agent_mentions": allow_agent_mentions}
-        break
-    return policy
+        state["discussion"] = {"on": on, "allow_agent_mentions": allow_agent_mentions}
+
+def _control_state_before_event(events: list[dict[str, Any]], event_id: str) -> dict[str, Any]:
+    state = _default_control_state()
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        if str(evt.get("id") or "") == event_id:
+            break
+        if str(evt.get("type") or "") != "control":
+            continue
+        if str(evt.get("from") or "") != "user":
+            continue
+        content = _parse_control_content(evt)
+        if not content:
+            continue
+        _apply_control_content_to_state(state, content)
+    return state
+
+def _fetch_presence(bridge_url: str, thread_id: str) -> dict[str, Any] | None:
+    try:
+        return _http_json("GET", bridge_url.rstrip("/") + f"/threads/{thread_id}/presence")
+    except Exception:
+        return None
+
+def _build_participant_index(
+    agents: dict[str, AgentConfig],
+    presence_snapshot: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    participants: dict[str, dict[str, Any]] = {agent_id: {} for agent_id in agents.keys()}
+    if not isinstance(presence_snapshot, dict):
+        return participants
+    for entry in presence_snapshot.get("participants", []):
+        if not isinstance(entry, dict):
+            continue
+        participant_id = str(entry.get("id") or "")
+        if not participant_id:
+            continue
+        details = entry.get("details")
+        if not isinstance(details, dict):
+            details = {}
+        profile = details.get("profile") if isinstance(details.get("profile"), dict) else details
+        if not isinstance(profile, dict):
+            profile = {}
+        participants[participant_id] = profile
+    return participants
+
+def _resolve_mentions(
+    mentions: set[str],
+    participants: dict[str, dict[str, Any]],
+) -> tuple[set[str], dict[str, list[str]], set[str]]:
+    reserved = {"all", "everyone", "here"}
+    reserved_hits: set[str] = set()
+    target_ids: set[str] = set()
+    ambiguous: dict[str, list[str]] = {}
+
+    id_map = {pid.lower(): pid for pid in participants.keys()}
+    nickname_map: dict[str, list[str]] = {}
+    role_map: dict[str, set[str]] = {}
+    client_map: dict[str, set[str]] = {}
+    model_map: dict[str, set[str]] = {}
+
+    for pid, profile in participants.items():
+        nickname = profile.get("nickname")
+        if isinstance(nickname, str) and nickname.strip():
+            nickname_map.setdefault(nickname.lower(), []).append(pid)
+        client = profile.get("client")
+        if isinstance(client, str) and client.strip():
+            client_map.setdefault(client.lower(), set()).add(pid)
+        model = profile.get("model")
+        if isinstance(model, str) and model.strip():
+            model_map.setdefault(model.lower(), set()).add(pid)
+        roles = profile.get("roles")
+        if isinstance(roles, list):
+            for role in roles:
+                if isinstance(role, str) and role.strip():
+                    role_map.setdefault(role.lower(), set()).add(pid)
+
+    for mention in sorted(mentions):
+        if mention in reserved:
+            reserved_hits.add(mention)
+            continue
+        if mention in id_map:
+            target_ids.add(id_map[mention])
+            continue
+        if mention in nickname_map:
+            ids = sorted(nickname_map[mention])
+            if len(ids) == 1:
+                target_ids.add(ids[0])
+            else:
+                ambiguous[mention] = ids
+            continue
+        category_targets: set[str] = set()
+        if mention in role_map:
+            category_targets.update(role_map[mention])
+        if mention in client_map:
+            category_targets.update(client_map[mention])
+        if mention in model_map:
+            category_targets.update(model_map[mention])
+        if category_targets:
+            target_ids.update(category_targets)
+    return target_ids, ambiguous, reserved_hits
+
+def _participant_display(participant_id: str, profile: dict[str, Any]) -> str:
+    nickname = profile.get("nickname")
+    if isinstance(nickname, str) and nickname.strip():
+        nick = nickname.strip()
+        client = profile.get("client")
+        model = profile.get("model")
+        if isinstance(client, str) and client.strip() and isinstance(model, str) and model.strip():
+            return f"{nick} ({client.strip()}/{model.strip()})"
+        if isinstance(client, str) and client.strip():
+            return f"{nick} ({client.strip()})"
+        if isinstance(model, str) and model.strip():
+            return f"{nick} ({model.strip()})"
+        return nick
+    client = profile.get("client")
+    model = profile.get("model")
+    if isinstance(client, str) and client.strip() and isinstance(model, str) and model.strip():
+        return f"{client.strip()}/{model.strip()}"
+    if isinstance(client, str) and client.strip():
+        return client.strip()
+    if isinstance(model, str) and model.strip():
+        return model.strip()
+    return participant_id
 
 
 def _read_sse_stream(url: str, timeout_s: int = 60):
@@ -246,9 +390,6 @@ def main() -> int:
     startup_mode = str(cfg_raw.get("startup_mode", "end")).strip().lower() or "end"
     enable_mentions = bool(cfg_raw.get("enable_mentions", True))
     mention_prefix = str(cfg_raw.get("mention_prefix", "@"))
-    mention_senders = cfg_raw.get("mention_senders", ["user"])
-    if not isinstance(mention_senders, list) or not all(isinstance(x, str) for x in mention_senders):
-        mention_senders = ["user"]
     enable_broadcast = bool(cfg_raw.get("enable_broadcast", True))
     broadcast_senders = cfg_raw.get("broadcast_senders", ["user"])
     if not isinstance(broadcast_senders, list) or not all(isinstance(x, str) for x in broadcast_senders):
@@ -340,27 +481,41 @@ def main() -> int:
             except Exception as e:
                 print(f"[{_now_iso()}] error fetching events for {thread_id}: {e}", file=sys.stderr, flush=True)
                 continue
-            discussion = _thread_discussion_policy(events)
 
-            # Process only new events relative to persisted cursor.
-            new_events: list[dict[str, Any]] = []
-            if since:
-                for evt in events:
-                    if isinstance(evt, dict) and str(evt.get("ts", "")) > since:
-                        new_events.append(evt)
-            else:
+            if not since:
                 # no cursor => start at end, do not back-process history
                 if events:
                     thread_state["last_ts"] = str(events[-1].get("ts") or thread_state.get("last_ts") or "")
                 continue
 
-            if not new_events:
-                continue
-
             seen = processed_ids.setdefault(thread_id, set())
-            for evt in new_events:
+            control_state = _default_control_state()
+
+            for evt in events:
                 if not isinstance(evt, dict):
                     continue
+                ts = evt.get("ts")
+                if not isinstance(ts, str) or not ts:
+                    continue
+
+                is_new = ts > since
+
+                # Apply authoritative user controls as we scan so "future" controls
+                # never affect earlier messages.
+                if str(evt.get("type") or "") == "control" and str(evt.get("from") or "") == "user":
+                    content = _parse_control_content(evt)
+                    if content:
+                        _apply_control_content_to_state(control_state, content)
+                    if is_new:
+                        thread_state["last_ts"] = ts
+                    continue
+
+                if not is_new:
+                    continue
+
+                # Always advance cursor for any new event, even if we ignore it.
+                thread_state["last_ts"] = ts
+
                 evt_id = str(evt.get("id") or "")
                 if not evt_id or evt_id in seen:
                     continue
@@ -381,37 +536,81 @@ def main() -> int:
                     continue
 
                 target_agents: list[str] = []
+                paused = bool(control_state.get("paused"))
+                if paused:
+                    continue
+
                 if evt_to != "all":
                     if evt_to in agents:
                         target_agents = [evt_to]
                     else:
                         continue
                 else:
-                    # Broadcast message. Two options:
-                    # - mentions: "@agent-id" in content to target specific agents
-                    # - broadcast: invoke configured agents on any user broadcast (small-thread default)
+                    # Mentions only; no broadcast fanout.
                     mentions: set[str] = set()
-                    allow_mentions_from_sender = evt_from in mention_senders
-                    if discussion.get("allow_agent_mentions") and evt_from in agents:
-                        allow_mentions_from_sender = True
+                    discussion = control_state.get("discussion", {"on": False, "allow_agent_mentions": False})
+                    allow_mentions_from_sender = evt_from == "user" or (
+                        discussion.get("on") and discussion.get("allow_agent_mentions")
+                    )
                     if enable_mentions and allow_mentions_from_sender:
                         mentions = _extract_mentions(evt.get("content"), mention_prefix=mention_prefix)
-                    if mentions:
-                        for m in sorted(mentions):
-                            if m in agents:
-                                target_agents.append(m)
-                    else:
-                        if not enable_broadcast:
-                            continue
-                        if evt_from not in broadcast_senders:
-                            continue
-                        if broadcast_agents:
-                            for a in broadcast_agents:
-                                if a in agents:
-                                    target_agents.append(a)
-                        else:
-                            target_agents = sorted(agents.keys())
+                    if not mentions:
+                        continue
 
+                    presence_snapshot = _fetch_presence(bridge_url, thread_id)
+                    participants = _build_participant_index(agents, presence_snapshot)
+                    resolved, ambiguous, reserved_hits = _resolve_mentions(mentions, participants)
+                    # Prevent "self-wake" loops (an agent mentioning itself in its reply).
+                    resolved = {pid for pid in resolved if pid.lower() != evt_from.lower()}
+
+                    if evt_from == "user" and reserved_hits:
+                        reserved_list = ", ".join(f"@{m}" for m in sorted(reserved_hits))
+                        _append_event(
+                            bridge_url,
+                            thread_id,
+                            {
+                                "type": "message",
+                                "from": coordinator_id,
+                                "to": "user",
+                                "content": (
+                                    f"Reserved mention(s) {reserved_list} are not supported. "
+                                    "Please mention specific participants (e.g. @codex) or use to=<participant_id>."
+                                ),
+                                "meta": {"reply_to": evt_id, "tags": ["coordinator"]},
+                            },
+                        )
+
+                    if ambiguous:
+                        lines = []
+                        for mention, ids in sorted(ambiguous.items()):
+                            labels = [f"{pid} — {_participant_display(pid, participants.get(pid, {}))}" for pid in ids]
+                            lines.append(f"@{mention}: {', '.join(labels)}")
+                        _append_event(
+                            bridge_url,
+                            thread_id,
+                            {
+                                "type": "message",
+                                "from": coordinator_id,
+                                "to": "user",
+                                "content": (
+                                    "Nickname ambiguity. Please clarify by re-sending with to=<participant_id> "
+                                    "or @<participant_id>:\n" + "\n".join(lines)
+                                ),
+                                "meta": {"reply_to": evt_id, "tags": ["coordinator"]},
+                            },
+                        )
+
+                    if resolved:
+                        target_agents = sorted([a for a in resolved if a in agents])
+                    else:
+                        target_agents = []
+
+                    if not target_agents:
+                        continue
+
+                muted_targets = control_state.get("muted", set())
+                if muted_targets:
+                    target_agents = [a for a in target_agents if a not in muted_targets]
                     if not target_agents:
                         continue
 
@@ -441,7 +640,7 @@ def main() -> int:
                     except Exception as e:
                         rc, out, err = 125, "", f"adapter error: {e}"
                     finally:
-                        _post_presence(bridge_url, thread_id, agent_id, "idle")
+                        _post_presence(bridge_url, thread_id, agent_id, "listening")
 
                     if rc == 0:
                         reply = _truncate(out.strip(), max_chars=max_reply_chars).strip()
@@ -473,11 +672,6 @@ def main() -> int:
                                 "meta": {"reply_to": evt_id, "tags": ["coordinator", "error"]},
                             },
                         )
-
-                # advance cursor opportunistically per processed event
-                ts = evt.get("ts")
-                if isinstance(ts, str) and ts:
-                    thread_state["last_ts"] = ts
 
             _save_json_file(state_path, state)
 

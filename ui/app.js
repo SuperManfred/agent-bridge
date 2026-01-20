@@ -9,6 +9,14 @@ const contentInput = document.getElementById("content");
 const sendBtn = document.getElementById("send");
 const streamStatusEl = document.getElementById("stream-status");
 const presenceEl = document.getElementById("presence");
+const errorEl = document.getElementById("send-error");
+const pauseBtn = document.getElementById("pause-thread");
+const resumeBtn = document.getElementById("resume-thread");
+const discussionOnBtn = document.getElementById("discussion-on");
+const discussionOffBtn = document.getElementById("discussion-off");
+const muteTargetInput = document.getElementById("mute-target");
+const muteBtn = document.getElementById("mute-participant");
+const unmuteBtn = document.getElementById("unmute-participant");
 
 let currentRoomId = null;
 let lastEventTs = null;
@@ -41,7 +49,16 @@ function setStreamStatus(mode) {
 async function fetchJson(path, options = {}) {
   const res = await fetch(path, options);
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+    let payload = null;
+    try {
+      payload = await res.json();
+    } catch {
+      payload = null;
+    }
+    const error = new Error(`HTTP ${res.status}`);
+    error.status = res.status;
+    error.payload = payload;
+    throw error;
   }
   return res.json();
 }
@@ -140,14 +157,27 @@ function renderPresence(snapshot) {
   const parts = participants.map((p) => {
     const state = p.stale ? "offline" : (p.state || "unknown");
     const isThinking = !p.stale && state === "thinking";
+    const label = presenceLabel(p);
     if (isThinking) {
-      return `<strong>${escapeHtml(p.id || "?")}</strong> is thinking<span class="thinking-indicator"><span></span><span></span><span></span></span>`;
+      return `<strong>${escapeHtml(label)}</strong> is thinking<span class="thinking-indicator"><span></span><span></span><span></span></span>`;
     }
-    return `${escapeHtml(p.id || "?")}: <code>${escapeHtml(state)}</code>`;
+    return `${escapeHtml(label)}: <code>${escapeHtml(state)}</code>`;
   });
 
   presenceEl.innerHTML = parts.join(" • ");
   presenceEl.classList.toggle("has-thinking", hasThinking);
+}
+
+function presenceLabel(p) {
+  const details = (p && p.details) || {};
+  const profile = (details && typeof details.profile === "object" && details.profile) ? details.profile : details;
+  if (profile.nickname) return profile.nickname;
+  const client = profile.client;
+  const model = profile.model;
+  if (client || model) {
+    return [client, model].filter(Boolean).join("/");
+  }
+  return p.id || "?";
 }
 
 async function loadPresence() {
@@ -242,11 +272,22 @@ async function sendMessage() {
   if (!content) return;
   const from = fromInput.value.trim() || "user";
   const to = (toInput && toInput.value.trim()) || "all";
-  await fetchJson(`/threads/${currentRoomId}/events`, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({type: "message", from, to, content})
-  });
+  try {
+    await fetchJson(`/threads/${currentRoomId}/events`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({type: "message", from, to, content})
+    });
+    showError("");
+  } catch (err) {
+    if (err && err.status === 409 && err.payload && err.payload.error) {
+      const {code, message} = err.payload.error;
+      showError(`${code}: ${message}`);
+    } else {
+      showError("Send failed.");
+    }
+    return;
+  }
   contentInput.value = "";
   if (!sse || fallbackTimer) {
     await loadEvents(false);
@@ -259,6 +300,61 @@ contentInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
     sendMessage();
   }
+});
+
+function showError(message) {
+  if (!errorEl) return;
+  if (!message) {
+    errorEl.textContent = "";
+    errorEl.classList.remove("visible");
+    return;
+  }
+  errorEl.textContent = message;
+  errorEl.classList.add("visible");
+}
+
+async function sendControlEvent(content) {
+  if (!currentRoomId) return;
+  const from = "user";
+  try {
+    await fetchJson(`/threads/${currentRoomId}/events`, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({type: "control", from, to: "all", content})
+    });
+    showError("");
+  } catch {
+    showError("Control event failed.");
+  }
+}
+
+pauseBtn?.addEventListener("click", () => {
+  sendControlEvent({pause: {on: true}});
+});
+resumeBtn?.addEventListener("click", () => {
+  sendControlEvent({pause: {on: false}});
+});
+discussionOnBtn?.addEventListener("click", () => {
+  sendControlEvent({discussion: {on: true, allow_agent_mentions: true}});
+});
+discussionOffBtn?.addEventListener("click", () => {
+  sendControlEvent({discussion: {on: false, allow_agent_mentions: false}});
+});
+muteBtn?.addEventListener("click", () => {
+  const target = muteTargetInput?.value.trim();
+  if (!target) {
+    showError("Mute requires a participant id.");
+    return;
+  }
+  sendControlEvent({mute: {targets: [target], mode: "hard"}});
+});
+unmuteBtn?.addEventListener("click", () => {
+  const target = muteTargetInput?.value.trim();
+  if (!target) {
+    showError("Unmute requires a participant id.");
+    return;
+  }
+  sendControlEvent({unmute: {targets: [target]}});
 });
 
 // User typing indicator
@@ -288,15 +384,15 @@ function handleTypingStart() {
   if (typingTimeout) clearTimeout(typingTimeout);
   typingTimeout = setTimeout(() => {
     isTyping = false;
-    setTypingPresence("idle");
-  }, 3000); // Mark idle after 3s of no typing
+    setTypingPresence("listening");
+  }, 3000); // Mark listening after 3s of no typing
 }
 
 function handleTypingStop() {
   if (typingTimeout) clearTimeout(typingTimeout);
   if (isTyping) {
     isTyping = false;
-    setTypingPresence("idle");
+    setTypingPresence("listening");
   }
 }
 

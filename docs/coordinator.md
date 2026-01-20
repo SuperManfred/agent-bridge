@@ -34,19 +34,35 @@ Given an incoming thread event `evt`:
 Practical implication:
 - If you want an agent to auto-respond, send a message with `to="<agent-id>"` (e.g., `to="codex"`).
 
-### Mentions (optional, recommended)
+### Mentions (recommended, conservative by default)
 
-To keep conversation flow natural, the coordinator MAY support “mentions” for broadcast messages:
-- If `evt.to == "all"` and the message content contains `@<agent-id>`, the coordinator will invoke that agent.
-- To prevent feedback loops, mention-triggering SHOULD be limited to messages from specific senders (default: `from="user"`).
+To keep conversation flow natural without introducing a “workflow protocol”, the coordinator supports optional mention-based targeting for broadcast messages.
+
+Default behavior:
+- If `evt.to == "all"` and the message content contains `@...`, the coordinator MAY treat that as explicit targeting.
+- Mentions are enabled by default for the **human** sender (by convention `from="user"`).
+- Mentions from non-human participants are disabled by default and require an explicit thread control (see “Discussion mode”).
 
 This avoids forcing the human to always fill a separate `to` field, while still preventing “everyone responds to everything.”
 
-### Broadcast (recommended for small threads)
+#### Mention targets
 
-To make the system feel “alive” for small-group collaboration:
-- If `evt.to == "all"` and the message does **not** contain explicit mentions, the coordinator MAY invoke a configured set of agents automatically (default: all configured agents).
-- To prevent loops, broadcast-triggering SHOULD be limited to messages from specific senders (default: `from="user"`).
+Mentions may target:
+- a `participant_id` (stable handle)
+- a `nickname`
+- a `role`
+- a `client` (e.g. `@codex`, `@claude`)
+- a `model` (e.g. `@gpt-5.2-codex`)
+
+Resolution notes:
+- v0 behavior is limited: `@<agent-id>` where `<agent-id>` exactly matches a configured agent id.
+- v1 intent is richer: the coordinator resolves mentions against known participant profiles (published via presence and/or persisted events). If a mention is ambiguous, the coordinator should ask for clarification rather than guessing.
+
+### Broadcast fanout (opt-in, off by default)
+
+To avoid reintroducing orchestration-like behavior or runaway chatter:
+- If `evt.to == "all"` and there are **no mentions**, the coordinator MUST NOT auto-invoke everyone by default.
+- Optional fanout can be enabled explicitly per thread via a control event, and should remain bounded.
 
 ## Discussion mode (opt-in, bounded policy loosening)
 
@@ -69,8 +85,12 @@ To allow more “human-like” collaboration (agents can tap in other agents), u
 ```
 
 Behavior (v1):
-- When `discussion.allow_agent_mentions` is enabled, agents MAY wake other agents via `@agent-id` mentions in `to="all"` messages.
+- When `discussion.allow_agent_mentions` is enabled, non-human participants MAY wake other participants via `@...` mentions in `to="all"` messages.
 - Broadcast fanout (agents responding to every agent message) remains disabled unless explicitly configured.
+
+Naming note:
+- The key is called `allow_agent_mentions` in v0; v1 intent is “allow non-human participant mentions”.
+  - If `allow_agent_mentions` is omitted, implementations MAY treat it as the same value as `discussion.on` (i.e., `on: true` implies mentions are allowed unless explicitly disabled).
 
 Optional (future):
 - react to `control` events like `prod`
@@ -124,7 +144,7 @@ Example:
   "enable_mentions": true,
   "mention_prefix": "@",
   "mention_senders": ["user"],
-  "enable_broadcast": true,
+  "enable_broadcast": false,
   "broadcast_senders": ["user"],
   "broadcast_agents": [],
   "agents": {

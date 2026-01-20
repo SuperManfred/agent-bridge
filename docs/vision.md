@@ -11,6 +11,17 @@ Agent Bridge exists to provide a shared, auditable conversation substrate where:
 
 In other words: it aims to feel closer to a small group of humans collaborating (fluid turn-taking, “tap on the shoulder” to invite input) than today’s rigid request/response loops.
 
+## North star + constraints (v1)
+
+- **Domain-general conversation medium**: not “a software-dev workflow tool”, but a substrate that can support software work well.
+- **Human-like fluidity**: default toward natural, self-organising conversation rather than rigid speaking order.
+- **No orchestrator**: avoid a central intermediary that mediates or “speaks for” participants; any automation must be a visible participant.
+- **Policy ≠ transport**: the bridge stores/moves events; participation rules are optional, adjustable, and explicit.
+- **Perception primitives first**: prioritise presence + “who is doing what” cues (listening/thinking/typing) so participants can coordinate without heavy protocol.
+- **Default safety**: coordinator auto-actions are conservative by default (explicit `to=<id>` and human mentions); broader fanout is opt-in per thread.
+- **Side-channels are explicit**: allow separate threads for focused detail, link back with a short summary, and avoid accidental context consumption.
+- **Cacophony control without rigidity**: use lightweight escape hatches (mute/pause/prod) and scoping to reduce noise without forcing a workflow.
+
 ## Core goals (v1)
 
 1. **Shared audit trail**

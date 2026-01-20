@@ -142,6 +142,28 @@
         gap: 8px;
         margin-top: 12px;
       }
+      .controls {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .control-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .error {
+        display: none;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: #f6e4d6;
+        color: #8a3b12;
+        border: 1px solid #ebc4aa;
+        font-size: 13px;
+      }
+      .error.visible {
+        display: block;
+      }
       /* Presence styling */
       #presence {
         min-height: 24px;
@@ -209,11 +231,26 @@
       <section class="panel">
         <div><strong id="room-title">Select a room</strong></div>
         <div class="sub" id="presence"></div>
+        <div class="error" id="send-error"></div>
         <div class="events" id="events"></div>
         <div class="composer">
           <input id="from" placeholder="from (user/codex/claude-code/etc)" value="user" />
           <input id="to" placeholder="to (all/codex/claude-code/etc)" value="all" />
           <div class="sub">Tip: keep <code>to=all</code> and mention <code>@codex</code> / <code>@claude-code</code> (requires coordinator).</div>
+          <div class="controls">
+            <div class="sub">Thread controls</div>
+            <div class="control-row">
+              <button id="pause-thread" class="secondary">Pause</button>
+              <button id="resume-thread">Resume</button>
+              <button id="discussion-on" class="secondary">Discussion On</button>
+              <button id="discussion-off">Discussion Off</button>
+            </div>
+            <div class="control-row">
+              <input id="mute-target" placeholder="participant id to mute/unmute" />
+              <button id="mute-participant" class="secondary">Mute</button>
+              <button id="unmute-participant">Unmute</button>
+            </div>
+          </div>
           <textarea id="content" rows="3" placeholder="Message"></textarea>
           <button id="send">Send</button>
         </div>

@@ -179,11 +179,86 @@ def read_messages(since: str = None, for_agent: str = None, visibility: str = No
 def format_sse_event(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
+def _parse_control_content(evt: dict) -> dict | None:
+    content = evt.get("content")
+    if isinstance(content, str) and content.strip().startswith("{"):
+        try:
+            content = json.loads(content)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(content, dict):
+        return None
+    return content
+
+def _derive_thread_state(events: list[dict]) -> dict:
+    state = {
+        "paused": False,
+        "muted": set(),
+        "discussion": {"on": False, "allow_agent_mentions": False},
+    }
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        if str(evt.get("type") or "") != "control":
+            continue
+        if str(evt.get("from") or "") != "user":
+            continue
+        content = _parse_control_content(evt)
+        if not content:
+            continue
+
+        mute = content.get("mute")
+        if isinstance(mute, dict):
+            mode = str(mute.get("mode") or "hard")
+            targets = mute.get("targets")
+            if mode == "hard" and isinstance(targets, list):
+                for t in targets:
+                    participant_id = str(t).strip()
+                    if participant_id:
+                        state["muted"].add(participant_id)
+
+        unmute = content.get("unmute")
+        if isinstance(unmute, dict):
+            targets = unmute.get("targets")
+            if isinstance(targets, list):
+                for t in targets:
+                    participant_id = str(t).strip()
+                    if participant_id:
+                        state["muted"].discard(participant_id)
+
+        pause = content.get("pause")
+        if isinstance(pause, dict):
+            state["paused"] = bool(pause.get("on", True))
+
+        discussion = content.get("discussion")
+        if isinstance(discussion, dict):
+            on = bool(discussion.get("on", True))
+            allow_agent_mentions = bool(discussion.get("allow_agent_mentions", on))
+            state["discussion"] = {"on": on, "allow_agent_mentions": allow_agent_mentions}
+    return state
+
+def _error_409(code: str, message: str, thread_id: str, participant_id: str):
+    return jsonify({
+        "error": {
+            "code": code,
+            "message": message,
+            "thread": thread_id,
+            "participant": participant_id,
+        }
+    }), 409
+
 def set_presence(thread_id: str, participant_id: str, state: str, details: dict | None = None) -> dict:
     now = datetime.now().isoformat()
     thread_presence = PRESENCE.setdefault(thread_id, {})
+    existing = thread_presence.get(participant_id) if isinstance(thread_presence.get(participant_id), dict) else {}
     entry = {"state": state, "updated_at": now}
-    if details:
+    if details is None:
+        # Preserve existing profile/details on state updates so presence transitions
+        # (e.g. thinking -> listening) don't erase identity.
+        existing_details = existing.get("details") if isinstance(existing, dict) else None
+        if isinstance(existing_details, dict):
+            entry["details"] = existing_details
+    else:
         entry["details"] = details
     thread_presence[participant_id] = entry
     return {"thread": thread_id, "participant": participant_id, **entry}
@@ -290,6 +365,26 @@ def post_thread_event(thread_id: str):
         return jsonify({"error": "Missing 'from'"}), 400
     if "content" not in data and data.get("type") == "message":
         return jsonify({"error": "Missing 'content'"}), 400
+    if data.get("type") == "message":
+        participant_id = str(data.get("from") or "")
+        if participant_id != "user":
+            events = read_thread_events(thread_id)
+            state = _derive_thread_state(events)
+            muted = state.get("muted", set())
+            if participant_id in muted:
+                return _error_409(
+                    "participant_muted",
+                    "Participant is muted for this thread.",
+                    thread_id,
+                    participant_id,
+                )
+            if state.get("paused"):
+                return _error_409(
+                    "thread_paused",
+                    "Thread is paused for non-user participants.",
+                    thread_id,
+                    participant_id,
+                )
     entry = write_thread_event(thread_id, data)
     return jsonify({"received": True, "event": entry})
 
