@@ -9,62 +9,57 @@ Evidence is in `server.py`.
 ### Health
 
 - `GET /ping` — returns status and version
-  - Evidence: `server.py:233`
+  - Evidence: `server.py:292`
 
 ### Threads (rooms)
 
 - `GET /threads` — list threads index
-  - Evidence: `server.py:258`
+  - Evidence: `server.py:301`
 - `POST /threads` — create a new thread and emit a `thread.created` event
-  - Evidence: `server.py:263`
+  - Evidence: `server.py:306`
 
 Thread storage:
 - Thread event log: `conversations/threads/<thread_id>.jsonl`
-  - Evidence: `server.py:120`
+  - Evidence: `server.py:107`
 - Thread index: `conversations/index.json`
-  - Evidence: `server.py:34`
+  - Evidence: `server.py:40`
 
 ### Thread events
 
 - `GET /threads/<thread_id>/events?since=<ts>`
-  - Evidence: `server.py:278`
+  - Evidence: `server.py:321`
 - `POST /threads/<thread_id>/events`
-  - Evidence: `server.py:284`
+  - Evidence: `server.py:331`
 
 ### Thread event streaming (SSE)
 
 - `GET /threads/<thread_id>/events/stream?since=<ts>`
-  - Evidence: `server.py:297`
+  - Evidence: `server.py:364`
 
 SSE payload:
 - Each SSE message uses `data: <json>\n\n`.
-  - Evidence: `server.py:179`
+  - Evidence: `server.py:142`
 
 ### Thread presence (ephemeral)
 
 - `GET /threads/<thread_id>/presence`
-  - Evidence: `server.py:309`
+  - Evidence: `server.py:376`
 - `POST /threads/<thread_id>/presence`
-  - Evidence: `server.py:313`
+  - Evidence: `server.py:380`
 
 Notes:
 - Presence is stored in memory with a TTL and is not appended to the thread log by default.
 - `details` may include participant profile fields like `{client, model, nickname, roles}`.
 
-### Legacy message log (daily file)
+### Legacy daily message log (removed)
 
-There is also a non-threaded “daily conversation” log:
-- `POST /message`, `GET /messages`, `GET /latest`, `POST /broadcast`
-  - Evidence: `server.py:243`, `server.py:330`, `server.py:340`, `server.py:348`
-
-Note:
-- This is conceptually separate from threads, and may be deprecated once threads cover the intended use.
+The non-threaded “daily conversation” endpoints (`/message`, `/messages`, `/latest`, `/broadcast`) have been removed in favor of thread events.
 
 ### Suggestions
 
 Suggestions are explicitly “about improving the bridge itself”:
 - `POST /suggest`, `GET /suggestions`
-  - Evidence: `server.py:392`, `server.py:406`
+  - Evidence: `server.py:424`, `server.py:438`
 
 ## Current UI (v0)
 
@@ -77,5 +72,4 @@ The browser UI is a thread/room viewer + sender with SSE fallback to polling.
 ## Direction (v1 intent)
 
 Open questions to resolve in spec before changing APIs:
-- Whether to collapse `/message(s)` into thread events entirely.
 - Whether to standardize event shape across all endpoints (thread + legacy).

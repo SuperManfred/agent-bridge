@@ -7,12 +7,17 @@ Usage:
 
 Endpoints:
     GET  /ping      - Health check
-    POST /message   - Send a message
-    GET  /messages  - Get messages (?since=, ?for=, ?visibility=)
-    GET  /latest    - Get most recent message
-    POST /broadcast - User message to all agents
     POST /suggest   - Submit improvement suggestion for the bridge itself
     GET  /suggestions - List suggestions
+
+Thread endpoints:
+    GET  /threads                     - List threads index
+    POST /threads                     - Create a thread (emits thread.created event)
+    GET  /threads/<thread_id>/events  - Fetch thread events (?since=)
+    POST /threads/<thread_id>/events  - Append a thread event
+    GET  /threads/<thread_id>/events/stream - SSE stream of thread events (?since=)
+    GET  /threads/<thread_id>/presence - Ephemeral presence snapshot
+    POST /threads/<thread_id>/presence - Update ephemeral presence
 """
 
 import json
@@ -61,25 +66,6 @@ def ulid() -> str:
     time_part = _encode_base32(timestamp_ms, 10)
     rand_part = _encode_base32(secrets.randbits(80), 16)
     return f"{time_part}{rand_part}"
-
-
-def get_conversation_file():
-    today = datetime.now().strftime("%Y-%m-%d")
-    return DATA_DIR / f"{today}.jsonl"
-
-
-def write_message(message: dict) -> dict:
-    now = datetime.now()
-    entry = {
-        "id": ulid(),
-        "timestamp": now.isoformat(),
-        "visibility": message.get("visibility", "all"),
-        **message
-    }
-    with open(get_conversation_file(), "a") as f:
-        f.write(json.dumps(entry) + "\n")
-    return entry
-
 
 def load_threads_index() -> dict:
     if not THREADS_INDEX.exists():
@@ -152,30 +138,6 @@ def read_thread_events(thread_id: str, since: str = None) -> list:
                     continue
                 events.append(evt)
     return events
-
-
-def read_messages(since: str = None, for_agent: str = None, visibility: str = None) -> list:
-    filepath = get_conversation_file()
-    if not filepath.exists():
-        return []
-
-    messages = []
-    with open(filepath, "r") as f:
-        for line in f:
-            if line.strip():
-                msg = json.loads(line)
-                if since and msg["timestamp"] <= since:
-                    continue
-                msg_vis = msg.get("visibility", "all")
-                if visibility and msg_vis != visibility and msg_vis != "all":
-                    continue
-                if for_agent:
-                    msg_to = msg.get("to", "all")
-                    if msg_to != "all" and msg_to != for_agent:
-                        continue
-                messages.append(msg)
-    return messages
-
 
 def format_sse_event(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
@@ -336,22 +298,6 @@ def ping():
         "timestamp": datetime.now().isoformat()
     })
 
-
-@app.route("/message", methods=["POST"])
-def post_message():
-    data = request.json
-    if not data:
-        return jsonify({"error": "No JSON body"}), 400
-    if "from" not in data:
-        return jsonify({"error": "Missing 'from'"}), 400
-    if "content" not in data:
-        return jsonify({"error": "Missing 'content'"}), 400
-
-    entry = write_message(data)
-    print(f"[{entry['timestamp']}] {data['from']} → {data.get('to', 'all')}: {data['content'][:80]}")
-    return jsonify({"received": True, "id": entry["id"], "timestamp": entry["timestamp"]})
-
-
 @app.route("/threads", methods=["GET"])
 def list_threads():
     return jsonify(load_threads_index())
@@ -448,41 +394,6 @@ def post_thread_presence(thread_id: str):
     entry = set_presence(thread_id, str(participant_id), str(state), details=details)
     return jsonify({"received": True, "presence": entry})
 
-@app.route("/messages", methods=["GET"])
-def get_messages():
-    messages = read_messages(
-        since=request.args.get("since"),
-        for_agent=request.args.get("for"),
-        visibility=request.args.get("visibility")
-    )
-    return jsonify({"messages": messages, "count": len(messages)})
-
-
-@app.route("/latest", methods=["GET"])
-def get_latest():
-    messages = read_messages(for_agent=request.args.get("for"))
-    if not messages:
-        return jsonify({"message": None})
-    return jsonify({"message": messages[-1]})
-
-
-@app.route("/broadcast", methods=["POST"])
-def broadcast():
-    data = request.json
-    if not data or "content" not in data:
-        return jsonify({"error": "Missing 'content'"}), 400
-
-    entry = write_message({
-        "from": "user",
-        "to": "all",
-        "visibility": "all",
-        "type": "broadcast",
-        "content": data["content"],
-        "context": data.get("context"),
-    })
-    print(f"[BROADCAST] {data['content'][:80]}")
-    return jsonify({"broadcast": True, "id": entry["id"], "timestamp": entry["timestamp"]})
-
 
 # Suggestions are specifically for improving THIS bridge system
 def write_suggestion(suggestion: dict) -> dict:
@@ -537,10 +448,14 @@ def index():
         "version": "0.3.0",
         "endpoints": {
             "GET /ping": "Health check",
-            "POST /message": "Send message (from, to?, content, visibility?)",
-            "GET /messages": "Get messages (?since=, ?for=, ?visibility=)",
-            "GET /latest": "Get most recent (?for=)",
-            "POST /broadcast": "User broadcast (content, context?)",
+            "GET /threads": "List threads",
+            "POST /threads": "Create thread (name?, from?)",
+            "GET /threads/<thread_id>/events": "Fetch events (?since=)",
+            "POST /threads/<thread_id>/events": "Append event",
+            "GET /threads/<thread_id>/events/stream": "SSE stream (?since=)",
+            "GET /threads/<thread_id>/presence": "Presence snapshot",
+            "POST /threads/<thread_id>/presence": "Update presence",
+            "GET /threads/<thread_id>/state": "Derived control state",
             "POST /suggest": "Suggest bridge improvement (from, title, description)",
             "GET /suggestions": "List suggestions (?status=)"
         }

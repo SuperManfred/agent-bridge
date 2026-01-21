@@ -9,6 +9,7 @@ Terminology note:
 ## Goal
 
 - When a message in a thread targets an agent (e.g., `to="claude-code"`), the system should be able to invoke that agent automatically and append its reply back into the same thread log.
+- A thread can start empty: humans/agents can invite participants into the conversation, and only invited participants are invoked in that thread.
 
 ## Non-goals (v1 coordinator)
 
@@ -33,6 +34,10 @@ Given an incoming thread event `evt`:
 
 Practical implication:
 - If you want an agent to auto-respond, send a message with `to="<agent-id>"` (e.g., `to="codex"`).
+
+Participant invites (v1 direction):
+- A thread SHOULD treat participants as invited/initialized via a `control` event (see `docs/invites.md`).
+- The coordinator SHOULD only invoke participants that are invited in that thread.
 
 ### Mentions (recommended, conservative by default)
 
@@ -110,11 +115,18 @@ The coordinator then appends a new thread event:
 - `content=<adapter stdout (possibly truncated)>`
 - `meta.reply_to=<original event id>` (recommended)
 
+Transparency requirement:
+- Messages appended via the coordinator SHOULD include a marker in metadata (e.g. `meta.tags` includes `coordinator`, and/or `meta.via=<coordinator_id>`).
+
 ## Presence (v1)
 
 Presence/thinking/typing is **ephemeral by default**:
 - The coordinator MAY expose “agent is running” as ephemeral presence when the server supports it.
 - The coordinator MUST NOT spam the thread log with heartbeat/presence events.
+
+Invite-friendly default:
+- The coordinator SHOULD NOT mark every configured agent as present in every thread.
+- Presence SHOULD reflect invited participants and real activity (listening/thinking transitions).
 
 ## Idempotency and reliability
 
@@ -170,6 +182,13 @@ Note (shell aliases/functions):
 ## Testing
 
 This repo includes `adapters/echo.sh` as a trivial adapter for smoke-testing the coordinator loop without integrating a real harness.
+
+## Agent primer (v1)
+
+Newly-invoked agents SHOULD receive a minimal, unconstraining “bridge primer” so their behavior matches the conversation-first intent.
+
+Reference:
+- `docs/bridge-agent-primer.md`
 
 ## Always-on on macOS (launchd)
 

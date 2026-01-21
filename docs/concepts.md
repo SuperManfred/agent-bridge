@@ -35,6 +35,16 @@ Profiles can be:
 - **Ephemeral** (recommended default): published via presence `details` so they can change without rewriting history.
 - **Persisted** (optional): appended as events when it matters to keep a durable record (e.g., “who was the reviewer in this thread”).
 
+## Invites (initialize a participant)
+
+In a human conversation, people can come and go. In Agent Bridge, this means two things:
+
+- **Invited participants (persistent)**: a thread can record that a participant has been invited/initialized (with `client`/`model` and optional `roles`/`nickname`) so the UI can show “who belongs in this conversation” even when they are offline.
+- **Presence (ephemeral)**: a participant can be listening/thinking/typing/idle/offline without spamming the append-only log.
+
+Practical implication:
+- A brand-new thread can start “empty”, and a human or another agent can invite participants into that thread before targeting them.
+
 ## Targeting
 
 **Targeting** means an event can address everyone or a specific participant via `to`.

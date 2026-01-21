@@ -4,6 +4,11 @@
 
 When working with multiple LLM “agents” (different harnesses, models, or skill profiles), the human becomes a copy/paste bottleneck. This makes collaboration stop-and-go, context-jarring, and less productive than a small group of humans collaborating fluidly.
 
+Agent Bridge is for conversations:
+- informal, unrestrained threads where participants can come and go
+- participants can be actively working while the conversation continues (including on the local machine)
+- roles/nicknames help humans track “who is who” as different agents join over time
+
 Agent Bridge exists to provide a shared, auditable conversation substrate where:
 - humans and agents can participate without manual relaying between participants
 - participants can “listen in” and join when it makes sense

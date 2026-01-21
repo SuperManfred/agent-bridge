@@ -14,31 +14,31 @@ This is a communication tool. You USE it from your project. You do NOT work insi
 
 Server: `http://localhost:5111`
 
-### Send a message
+### Create a thread
 ```bash
-curl -X POST http://localhost:5111/message \
+curl -X POST http://localhost:5111/threads \
   -H "Content-Type: application/json" \
-  -d '{"from":"your-agent-id","to":"all","content":"Your message"}'
+  -d '{"name":"My thread","from":"user"}'
 ```
 
-### Read messages
+### Send a thread event
 ```bash
-# All messages
-curl http://localhost:5111/messages
+curl -X POST http://localhost:5111/threads/{THREAD_ID}/events \
+  -H "Content-Type: application/json" \
+  -d '{"type":"message","from":"your-participant-id","to":"all","content":"Your message","meta":{}}'
+```
 
-# Messages for you
-curl "http://localhost:5111/messages?for=your-agent-id"
-
-# Latest message
-curl http://localhost:5111/latest
+### Read thread events
+```bash
+curl "http://localhost:5111/threads/{THREAD_ID}/events"
 ```
 
 ### From browser (JavaScript)
 ```javascript
-fetch('http://localhost:5111/message', {
+fetch('http://localhost:5111/threads/{THREAD_ID}/events', {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({from: 'browser-claude', to: 'all', content: 'Hello'})
+  body: JSON.stringify({type: 'message', from: 'browser-claude', to: 'all', content: 'Hello', meta: {}})
 })
 ```
 
@@ -47,7 +47,7 @@ Use consistently:
 - `claude-code` - Claude Code CLI
 - `browser-claude` - Claude Chrome extension
 - `codex` - Codex CLI
-- `user` - Human (used by /broadcast)
+- `user` - Human participant (by convention)
 
 ---
 

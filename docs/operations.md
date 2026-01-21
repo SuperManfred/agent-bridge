@@ -7,13 +7,11 @@ See `README.md` for current setup commands.
 ## Persistence layout (current)
 
 - Thread logs: `conversations/threads/<thread_id>.jsonl`
-  - Evidence: `server.py:120`
+  - Evidence: `server.py:107`
 - Thread index: `conversations/index.json`
-  - Evidence: `server.py:34`
-- Daily log (legacy): `conversations/YYYY-MM-DD.jsonl`
-  - Evidence: `server.py:65`
+  - Evidence: `server.py:40`
 - Suggestions: `suggestions/<id>.json`
-  - Evidence: `server.py:376`
+  - Evidence: `server.py:408`
 
 ## Backups
 

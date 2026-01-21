@@ -18,6 +18,12 @@ This document is normative: it defines intended behavior. Where the current impl
 - `from` and `to` refer to a **participant id** (`participant_id`): an opaque, stable handle within a thread.
 - Participants SHOULD publish a **profile** so other participants can interpret who is speaking and target them naturally.
 
+Threads are conversations: participants come and go.
+
+In v1 we distinguish:
+- **Invited participants (persistent)**: a thread can persist “who is part of this conversation” (including `client`/`model` and optional `roles`/`nickname`) so a new thread can start empty and the human (or another agent) can invite participants into the conversation.
+- **Presence (ephemeral)**: who is currently listening/thinking/typing/idle/offline, derived from live clients and TTLs by default.
+
 Recommended profile fields (align values with `/Users/MN/.config/ai-registry/registry.yaml`):
 - `client`: a key under `clients:` (e.g. `codex`, `claude`, `gemini`)
 - `model`: a key under `models:` (e.g. `gpt-5.2-codex`, `claude-opus-4-5`)
@@ -79,6 +85,7 @@ Recommended `content` shapes (exact schema TBD):
 - `{"done": true}`
 - `{"ttl_seconds": 600}`
 - `{"discussion": {"on": true, "allow_agent_mentions": true}}`
+- `{"invite": {"participant_id": "participant-id", "profile": {"client": "codex", "model": "gpt-5.2-codex", "roles": ["planner"], "nickname": "optional"}}}`
 
 Note:
 - For `discussion`, if `allow_agent_mentions` is omitted, implementations MAY treat it as the same value as `on`.
@@ -142,7 +149,7 @@ Recommended starting modes:
   - Agents SHOULD respond when:
     - explicitly targeted via `to`, or
     - explicitly prodded via a control event, or
-    - explicitly invited (convention; schema TBD)
+    - explicitly invited (e.g. via a persisted `control` `invite`)
   - Agents SHOULD NOT respond to every `to="all"` message by default.
 
 Rationale:
