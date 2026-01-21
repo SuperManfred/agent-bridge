@@ -1,3 +1,0 @@
-{"id": "01KF8ZXW12SSVATQC3M2BMK2Z1", "ts": "2026-01-19T02:45:04.418742", "thread": "01KF8ZXW12C8XQ46PPX2S34JGV", "type": "thread.created", "from": "user", "to": "all", "content": "Broadcast smoke test"}
-{"id": "01KF8ZXX29V85TE5AN375JJEG0", "ts": "2026-01-19T02:45:05.481675", "thread": "01KF8ZXW12C8XQ46PPX2S34JGV", "type": "message", "from": "user", "to": "all", "content": "hello everyone"}
-{"id": "01KF8ZXXK2ZSCFF89NZS69314K", "ts": "2026-01-19T02:45:06.018277", "thread": "01KF8ZXW12C8XQ46PPX2S34JGV", "type": "message", "from": "codex", "to": "all", "content": "echo-adapter reply: hello everyone", "meta": {"reply_to": "01KF8ZXX29V85TE5AN375JJEG0", "tags": ["coordinator"]}}

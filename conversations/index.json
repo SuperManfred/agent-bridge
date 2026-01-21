@@ -1,52 +1,10 @@
 {
   "threads": [
     {
-      "id": "01KF82M0YTR8YD8RQZGH89HJ9M",
-      "name": "1st-room",
-      "created_at": "2026-01-18T18:12:53.082823",
-      "updated_at": "2026-01-18T18:12:53.083508"
-    },
-    {
       "id": "01KF8V375NF5W2J7P9RRJY0CR2",
       "name": "Agent Bridge v1 docs interview",
       "created_at": "2026-01-19T01:20:36.789707",
       "updated_at": "2026-01-19T01:20:36.791008"
-    },
-    {
-      "id": "01KF8WXKENF7SNW718JMJ1D17B",
-      "name": "Coordinator smoke test",
-      "created_at": "2026-01-19T01:52:29.909389",
-      "updated_at": "2026-01-19T01:52:29.910536"
-    },
-    {
-      "id": "01KF8WZ4TPG7HBPNDW8D81X6TJ",
-      "name": "Coordinator smoke test 2",
-      "created_at": "2026-01-19T01:53:20.470868",
-      "updated_at": "2026-01-19T01:53:20.471828"
-    },
-    {
-      "id": "01KF8X0ET9S631CPKSG0G8BJWM",
-      "name": "Coordinator smoke test 3",
-      "created_at": "2026-01-19T01:54:03.465042",
-      "updated_at": "2026-01-19T01:54:03.465926"
-    },
-    {
-      "id": "01KF8Z0WXDBEEDQD7BQRTSQA0M",
-      "name": "Mentions smoke test",
-      "created_at": "2026-01-19T02:29:15.053871",
-      "updated_at": "2026-01-19T02:29:15.055633"
-    },
-    {
-      "id": "01KF8Z2705BXZKX5J8BSPSS6QH",
-      "name": "Mentions smoke test (no loop)",
-      "created_at": "2026-01-19T02:29:58.149421",
-      "updated_at": "2026-01-19T02:29:58.152933"
-    },
-    {
-      "id": "01KF8ZXW12C8XQ46PPX2S34JGV",
-      "name": "Broadcast smoke test",
-      "created_at": "2026-01-19T02:45:04.418256",
-      "updated_at": "2026-01-19T02:45:04.418870"
     }
   ]
 }
