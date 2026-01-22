@@ -174,10 +174,13 @@ def _fetch_presence(bridge_url: str, thread_id: str) -> dict[str, Any] | None:
         return None
 
 def _build_participant_index(
-    agents: dict[str, AgentConfig],
+    invited: dict[str, dict[str, Any]],
     presence_snapshot: dict[str, Any] | None,
 ) -> dict[str, dict[str, Any]]:
-    participants: dict[str, dict[str, Any]] = {agent_id: {} for agent_id in agents.keys()}
+    participants: dict[str, dict[str, Any]] = {}
+    for participant_id, profile in invited.items():
+        if isinstance(participant_id, str) and participant_id:
+            participants[participant_id] = profile if isinstance(profile, dict) else {}
     if not isinstance(presence_snapshot, dict):
         return participants
     for entry in presence_snapshot.get("participants", []):
@@ -186,14 +189,49 @@ def _build_participant_index(
         participant_id = str(entry.get("id") or "")
         if not participant_id:
             continue
+        if participant_id not in participants:
+            continue
         details = entry.get("details")
         if not isinstance(details, dict):
             details = {}
         profile = details.get("profile") if isinstance(details.get("profile"), dict) else details
         if not isinstance(profile, dict):
             profile = {}
-        participants[participant_id] = profile
+        merged = dict(participants.get(participant_id, {}))
+        merged.update(profile)
+        participants[participant_id] = merged
     return participants
+
+def _derive_invited_participants(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    invited: dict[str, dict[str, Any]] = {}
+    for evt in events:
+        if not isinstance(evt, dict):
+            continue
+        if str(evt.get("type") or "") != "control":
+            continue
+        content = _parse_control_content(evt)
+        if not content:
+            continue
+        invite = content.get("invite")
+        if isinstance(invite, dict):
+            participant_id = invite.get("participant_id")
+            profile = invite.get("profile")
+            if isinstance(participant_id, str) and participant_id.strip() and isinstance(profile, dict):
+                invited[participant_id.strip()] = profile
+        uninvite = content.get("uninvite")
+        if isinstance(uninvite, dict):
+            participant_id = uninvite.get("participant_id")
+            if isinstance(participant_id, str) and participant_id.strip():
+                invited.pop(participant_id.strip(), None)
+    return invited
+
+def _merge_profiles(primary: dict[str, Any] | None, fallback: dict[str, Any] | None) -> dict[str, Any]:
+    merged: dict[str, Any] = {}
+    if isinstance(fallback, dict):
+        merged.update(fallback)
+    if isinstance(primary, dict):
+        merged.update(primary)
+    return merged
 
 def _resolve_mentions(
     mentions: set[str],
@@ -493,25 +531,6 @@ def main() -> int:
             continue
 
         now_s = time.time()
-        if presence_heartbeat_s and now_s - last_presence_heartbeat >= presence_heartbeat_s:
-            for t in threads:
-                thread_id = t.get("id")
-                if not isinstance(thread_id, str) or not thread_id:
-                    continue
-                # Make agents visible in every thread by default (local-first UX).
-                for agent_id, agent_cfg in agents.items():
-                    if (thread_id, agent_id) in active_invocations:
-                        continue
-                    details = agent_cfg.profile if agent_cfg.profile else None
-                    _post_presence(bridge_url, thread_id, agent_id, "listening", details=details)
-                _post_presence(
-                    bridge_url,
-                    thread_id,
-                    coordinator_id,
-                    "listening",
-                    details={"client": "agent-bridge", "model": "coordinator", "nickname": "coordinator"},
-                )
-            last_presence_heartbeat = now_s
 
         for t in threads:
             thread_id = t.get("id")
@@ -529,6 +548,24 @@ def main() -> int:
             except Exception as e:
                 print(f"[{_now_iso()}] error fetching events for {thread_id}: {e}", file=sys.stderr, flush=True)
                 continue
+
+            invited = _derive_invited_participants(events)
+
+            if presence_heartbeat_s and now_s - last_presence_heartbeat >= presence_heartbeat_s:
+                for agent_id, agent_cfg in agents.items():
+                    if agent_id not in invited:
+                        continue
+                    if (thread_id, agent_id) in active_invocations:
+                        continue
+                    details = _merge_profiles(invited.get(agent_id), agent_cfg.profile)
+                    _post_presence(bridge_url, thread_id, agent_id, "listening", details=details or None)
+                _post_presence(
+                    bridge_url,
+                    thread_id,
+                    coordinator_id,
+                    "listening",
+                    details={"client": "agent-bridge", "model": "coordinator", "nickname": "coordinator"},
+                )
 
             if not since:
                 # no cursor => start at end, do not back-process history
@@ -589,7 +626,7 @@ def main() -> int:
                     continue
 
                 if evt_to != "all":
-                    if evt_to in agents:
+                    if evt_to in agents and evt_to in invited:
                         target_agents = [evt_to]
                     else:
                         continue
@@ -606,7 +643,7 @@ def main() -> int:
                         continue
 
                     presence_snapshot = _fetch_presence(bridge_url, thread_id)
-                    participants = _build_participant_index(agents, presence_snapshot)
+                    participants = _build_participant_index(invited, presence_snapshot)
                     resolved, ambiguous, reserved_hits = _resolve_mentions(mentions, participants)
                     # Prevent "self-wake" loops (an agent mentioning itself in its reply).
                     resolved = {pid for pid in resolved if pid.lower() != evt_from.lower()}
@@ -649,7 +686,7 @@ def main() -> int:
                         )
 
                     if resolved:
-                        target_agents = sorted([a for a in resolved if a in agents])
+                        target_agents = sorted([a for a in resolved if a in agents and a in invited])
                     else:
                         target_agents = []
 
@@ -665,9 +702,12 @@ def main() -> int:
                 context = _build_context_window(events, limit=context_window_size)
                 for agent_id in target_agents:
                     agent_cfg = agents[agent_id]
+                    invite_profile = invited.get(agent_id) if isinstance(invited, dict) else None
+                    merged_profile = _merge_profiles(invite_profile, agent_cfg.profile)
                     adapter_payload = {
                         "bridge": {"url": bridge_url},
                         "thread": {"id": thread_id},
+                        "participant": {"id": agent_id, "profile": merged_profile},
                         "trigger": {
                             "id": evt_id,
                             "ts": evt.get("ts"),
@@ -681,7 +721,7 @@ def main() -> int:
 
                     print(f"[{_now_iso()}] invoke {agent_id} for thread={thread_id} event={evt_id}", flush=True)
                     active_invocations.add((thread_id, agent_id))
-                    _post_presence(bridge_url, thread_id, agent_id, "thinking")
+                    _post_presence(bridge_url, thread_id, agent_id, "thinking", details=merged_profile or None)
                     try:
                         rc, out, err = _run_agent_adapter(agent_id, agent_cfg, adapter_payload, timeout_s=adapter_timeout_s)
                     except subprocess.TimeoutExpired:
@@ -690,7 +730,7 @@ def main() -> int:
                         rc, out, err = 125, "", f"adapter error: {e}"
                     finally:
                         active_invocations.discard((thread_id, agent_id))
-                        _post_presence(bridge_url, thread_id, agent_id, "listening")
+                        _post_presence(bridge_url, thread_id, agent_id, "listening", details=merged_profile or None)
 
                     if rc == 0:
                         reply = _truncate(out.strip(), max_chars=max_reply_chars).strip()
@@ -724,6 +764,9 @@ def main() -> int:
                         )
 
             _save_json_file(state_path, state)
+
+        if presence_heartbeat_s and now_s - last_presence_heartbeat >= presence_heartbeat_s:
+            last_presence_heartbeat = now_s
 
         time.sleep(poll_threads_s)
 

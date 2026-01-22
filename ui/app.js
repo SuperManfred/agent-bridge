@@ -14,6 +14,12 @@ const badgePausedEl = document.getElementById("badge-paused");
 const badgeDiscussionEl = document.getElementById("badge-discussion");
 const togglePauseBtn = document.getElementById("toggle-pause");
 const toggleDiscussionBtn = document.getElementById("toggle-discussion");
+const inviteClientEl = document.getElementById("invite-client");
+const inviteModelEl = document.getElementById("invite-model");
+const inviteRolesEl = document.getElementById("invite-roles");
+const inviteNicknameEl = document.getElementById("invite-nickname");
+const inviteIdEl = document.getElementById("invite-id");
+const inviteSubmitBtn = document.getElementById("invite-submit");
 
 let currentRoomId = null;
 let lastEventTs = null;
@@ -170,6 +176,50 @@ function displayTitle(profile, participantId) {
   return cm || participantId || "?";
 }
 
+function randomId(prefix) {
+  const base = Math.random().toString(36).slice(2, 8);
+  return `${prefix}-${base}`;
+}
+
+function buildInvitedMap() {
+  const invited = (latestState && latestState.state && latestState.state.participants && latestState.state.participants.invited) || [];
+  const map = new Map();
+  invited.forEach((entry) => {
+    if (!entry || !entry.id) return;
+    map.set(entry.id, entry);
+  });
+  return map;
+}
+
+function buildPresenceMap() {
+  const presence = (latestPresence && latestPresence.participants) || [];
+  const map = new Map();
+  presence.forEach((entry) => {
+    if (!entry || !entry.id) return;
+    map.set(entry.id, entry);
+  });
+  return map;
+}
+
+function mergeParticipants() {
+  const invitedMap = buildInvitedMap();
+  const presenceMap = buildPresenceMap();
+  const merged = [];
+
+  invitedMap.forEach((invited, id) => {
+    const presence = presenceMap.get(id) || null;
+    merged.push({id, invited, presence});
+  });
+
+  presenceMap.forEach((presence, id) => {
+    if (invitedMap.has(id)) return;
+    merged.push({id, invited: null, presence});
+  });
+
+  merged.sort((a, b) => (a.id || "").localeCompare(b.id || ""));
+  return merged;
+}
+
 function renderThreadState() {
   const state = (latestState && latestState.state) || null;
   const paused = !!(state && state.paused);
@@ -191,7 +241,7 @@ function renderThreadState() {
 
 function renderParticipants() {
   if (!participantsEl) return;
-  const participants = (latestPresence && latestPresence.participants) || [];
+  const participants = mergeParticipants();
   const mutedList = (latestState && latestState.state && Array.isArray(latestState.state.muted)) ? latestState.state.muted : [];
   const muted = new Set(mutedList);
 
@@ -206,9 +256,11 @@ function renderParticipants() {
   }
 
   participants.forEach((p) => {
-    const profile = getProfileFromPresence(p);
     const participantId = p.id || "?";
-    const state = p.stale ? "offline" : (p.state || "unknown");
+    const presence = p.presence || null;
+    const invited = p.invited || null;
+    const profile = invited && invited.profile ? invited.profile : getProfileFromPresence(presence);
+    const state = presence ? (presence.stale ? "offline" : (presence.state || "unknown")) : "offline";
     const isMuted = muted.has(participantId);
 
     const row = document.createElement("div");
@@ -255,6 +307,12 @@ function renderParticipants() {
       mutedChip.textContent = "muted";
       meta.appendChild(mutedChip);
     }
+    if (!invited) {
+      const presenceChip = document.createElement("span");
+      presenceChip.className = "chip";
+      presenceChip.textContent = "presence-only";
+      meta.appendChild(presenceChip);
+    }
     left.appendChild(meta);
 
     const actions = document.createElement("div");
@@ -293,10 +351,9 @@ function updateToOptions(participants) {
   optAll.textContent = "all (room)";
   toSelect.appendChild(optAll);
 
-  participants.forEach((p) => {
-    const participantId = p.id;
-    if (!participantId) return;
-    const profile = getProfileFromPresence(p);
+  const invited = buildInvitedMap();
+  invited.forEach((entry, participantId) => {
+    const profile = entry && entry.profile ? entry.profile : {};
     const label = displayTitle(profile, participantId);
     const opt = document.createElement("option");
     opt.value = participantId;
@@ -478,6 +535,39 @@ toggleDiscussionBtn?.addEventListener("click", () => {
   const discussion = (latestState && latestState.state && latestState.state.discussion) || {};
   const enabled = !!(discussion.on && discussion.allow_agent_mentions);
   sendControlEvent({discussion: {on: !enabled, allow_agent_mentions: !enabled}}).then(loadThreadState);
+});
+
+inviteSubmitBtn?.addEventListener("click", () => {
+  if (!currentRoomId) return;
+  const client = (inviteClientEl && inviteClientEl.value) ? inviteClientEl.value.trim() : "";
+  const model = (inviteModelEl && inviteModelEl.value) ? inviteModelEl.value.trim() : "";
+  const rolesRaw = (inviteRolesEl && inviteRolesEl.value) ? inviteRolesEl.value.trim() : "";
+  const nickname = (inviteNicknameEl && inviteNicknameEl.value) ? inviteNicknameEl.value.trim() : "";
+  let participantId = (inviteIdEl && inviteIdEl.value) ? inviteIdEl.value.trim() : "";
+  if (!participantId) {
+    if (client && client !== "custom") {
+      participantId = client;
+    } else {
+      participantId = randomId("agent");
+    }
+    if (inviteIdEl) inviteIdEl.value = participantId;
+  }
+  if (!client || !model || !participantId) {
+    showError("Invite requires client, model, and id.");
+    return;
+  }
+  const roles = rolesRaw ? rolesRaw.split(",").map((r) => r.trim()).filter(Boolean) : [];
+  const profile = {client, model};
+  if (roles.length) profile.roles = roles;
+  if (nickname) profile.nickname = nickname;
+  const content = {invite: {participant_id: participantId, profile}};
+  sendControlEvent(content).then(() => {
+    showError("");
+    if (inviteRolesEl) inviteRolesEl.value = "";
+    if (inviteNicknameEl) inviteNicknameEl.value = "";
+    if (inviteIdEl) inviteIdEl.value = "";
+    loadThreadState();
+  });
 });
 
 participantsEl?.addEventListener("click", (e) => {

@@ -44,6 +44,9 @@ with open(payload_file, 'r') as f:
 thread_id = d.get("thread", {}).get("id") or "unknown"
 trigger = d.get("trigger", {}) or {}
 ctx = d.get("context_window", []) or []
+participant = d.get("participant", {}) or {}
+profile = participant.get("profile", {}) if isinstance(participant, dict) else {}
+model = profile.get("model") if isinstance(profile, dict) else None
 
 def fmt_event(e):
     ts = e.get("ts", "")
@@ -57,12 +60,23 @@ def fmt_event(e):
 
 lines = []
 lines.append("You are Codex participating in an Agent Bridge thread.")
-lines.append("Reply ONCE with your best contribution. Do not run tools or modify files.")
+lines.append("Reply ONCE with your best contribution.")
 lines.append("Keep it concise and actionable.")
 lines.append("")
 lines.append(f"Thread: {thread_id}")
 lines.append(f"Replying to event: {trigger.get('id')} from {trigger.get('from')}")
+lines.append(f"Participant: {participant.get('id')}")
 lines.append("")
+primer = ""
+try:
+    with open("docs/bridge-agent-primer.md", "r") as primer_file:
+        primer = primer_file.read().strip()
+except OSError:
+    primer = ""
+if primer:
+    lines.append("Bridge primer:")
+    lines.append(primer)
+    lines.append("")
 lines.append("Recent context (most recent last):")
 for e in ctx[-25:]:
     if isinstance(e, dict):
@@ -76,12 +90,14 @@ lines.append(str(content))
 
 # Output thread_id on first line, prompt on rest
 print(thread_id)
+print(model or "")
 print("\n".join(lines))
 PYSCRIPT
 )"
 
 thread_id="$(echo "$read_result" | head -1)"
-prompt="$(echo "$read_result" | tail -n +2)"
+model="$(echo "$read_result" | sed -n '2p')"
+prompt="$(echo "$read_result" | tail -n +3)"
 
 # Per-thread isolation via XDG directories
 # This isolates Codex's "last" session state per thread
@@ -127,18 +143,23 @@ fi
 
 echo "[codex adapter] thread=$thread_id use_resume=$use_resume HOME=$HOME" >&2
 
+codex_model_args=()
+if [ -n "${model:-}" ]; then
+  codex_model_args=(-m "$model")
+fi
+
 if $use_resume; then
   # Resume previous session
   echo "[codex adapter] running: codex exec resume --last ..." >&2
-  printf "%s" "$prompt" | "$codex_bin" exec resume --last - -s read-only -C "$(pwd)" --output-last-message "$tmp_out" 2>>"$tmp_stderr" || {
+  printf "%s" "$prompt" | "$codex_bin" exec --sandbox workspace-write ${codex_model_args[@]+"${codex_model_args[@]}"} -C "$(pwd)" --output-last-message "$tmp_out" resume --last - 2>>"$tmp_stderr" || {
     echo "[codex adapter] resume failed, trying fresh session" >&2
     rm -f "$session_marker"
-    printf "%s" "$prompt" | "$codex_bin" exec - -s read-only -C "$(pwd)" --output-last-message "$tmp_out" 2>>"$tmp_stderr"
+    printf "%s" "$prompt" | "$codex_bin" exec --sandbox workspace-write ${codex_model_args[@]+"${codex_model_args[@]}"} -C "$(pwd)" --output-last-message "$tmp_out" - 2>>"$tmp_stderr"
   }
 else
   # Fresh session
   echo "[codex adapter] running: codex exec ..." >&2
-  printf "%s" "$prompt" | "$codex_bin" exec - -s read-only -C "$(pwd)" --output-last-message "$tmp_out" 2>>"$tmp_stderr"
+  printf "%s" "$prompt" | "$codex_bin" exec --sandbox workspace-write ${codex_model_args[@]+"${codex_model_args[@]}"} -C "$(pwd)" --output-last-message "$tmp_out" - 2>>"$tmp_stderr"
 fi
 
 # Mark that this thread now has a session that can be resumed

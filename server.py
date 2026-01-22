@@ -158,16 +158,40 @@ def _derive_thread_state(events: list[dict]) -> dict:
         "paused": False,
         "muted": set(),
         "discussion": {"on": False, "allow_agent_mentions": False},
+        "invited": {},
     }
     for evt in events:
         if not isinstance(evt, dict):
             continue
         if str(evt.get("type") or "") != "control":
             continue
-        if str(evt.get("from") or "") != "user":
-            continue
         content = _parse_control_content(evt)
         if not content:
+            continue
+
+        invite = content.get("invite")
+        if isinstance(invite, dict):
+            participant_id = invite.get("participant_id")
+            profile = invite.get("profile")
+            if isinstance(participant_id, str) and participant_id.strip() and isinstance(profile, dict):
+                invited = state["invited"]
+                if isinstance(invited, dict):
+                    invited[participant_id.strip()] = {
+                        "id": participant_id.strip(),
+                        "profile": profile,
+                        "invited_by": str(evt.get("from") or ""),
+                        "invited_at": str(evt.get("ts") or ""),
+                    }
+
+        uninvite = content.get("uninvite")
+        if isinstance(uninvite, dict):
+            participant_id = uninvite.get("participant_id")
+            if isinstance(participant_id, str) and participant_id.strip():
+                invited = state["invited"]
+                if isinstance(invited, dict):
+                    invited.pop(participant_id.strip(), None)
+
+        if str(evt.get("from") or "") != "user":
             continue
 
         mute = content.get("mute")
@@ -216,6 +240,10 @@ def get_thread_state_snapshot(thread_id: str) -> dict:
     muted = state.get("muted", set())
     if not isinstance(muted, set):
         muted = set()
+    invited_map = state.get("invited", {})
+    invited_list: list[dict] = []
+    if isinstance(invited_map, dict):
+        invited_list = sorted(invited_map.values(), key=lambda x: x.get("id") or "")
     discussion = state.get("discussion")
     if not isinstance(discussion, dict):
         discussion = {"on": False, "allow_agent_mentions": False}
@@ -228,6 +256,7 @@ def get_thread_state_snapshot(thread_id: str) -> dict:
                 "on": bool(discussion.get("on")),
                 "allow_agent_mentions": bool(discussion.get("allow_agent_mentions")),
             },
+            "participants": {"invited": invited_list},
         },
     }
 

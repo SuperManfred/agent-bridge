@@ -226,8 +226,7 @@ launchctl load -w ~/Library/LaunchAgents/com.agent-bridge.server.plist
 - `/tmp/agent-bridge-server.log`
 - `/tmp/agent-bridge-server.err.log`
 
-## Security scope
+## Scope boundaries (v1)
 
-- Localhost only.
-- No auth assumed.
-- `from` is not a strong identity; the coordinator is a convenience mechanism, not a security boundary.
+- Local-only on `localhost` for a single user.
+- `from` is a participant label by convention (not a verified identity).

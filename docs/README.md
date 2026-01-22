@@ -11,9 +11,10 @@ These docs capture product intent and a v1 specification for Agent Bridge (local
 5. `docs/api.md` — current HTTP/SSE surface (v0) + intended direction
 6. `docs/coordinator.md` — always-on component (removes nudges)
 7. `docs/operations.md` — how to run + how data is stored
-8. `docs/security.md` — trust boundaries (local-only)
-9. `docs/roadmap.md` — milestones and acceptance criteria
-10. `docs/decisions.md` — decisions + open questions
+8. `docs/roadmap.md` — milestones and acceptance criteria
+9. `docs/decisions.md` — decisions + open questions
+10. `docs/handoff-invite-agents-v1.md` — implementation-ready handoff (invite + default-on agency)
+11. `docs/bridge-agent-primer.md` — injected primer for invoked participants
 
 ## Status
 

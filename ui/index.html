@@ -213,6 +213,25 @@
       }
       .section-title { color: var(--muted); font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
       .thread-controls { display: grid; gap: 8px; }
+      .invite-panel {
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(0,0,0,0.14);
+        padding: 10px;
+        display: grid;
+        gap: 8px;
+      }
+      .invite-grid {
+        display: grid;
+        gap: 8px;
+      }
+      .invite-grid .row {
+        display: grid;
+        grid-template-columns: 90px 1fr;
+        gap: 8px;
+        align-items: center;
+      }
+      .invite-grid small { color: var(--muted); font-size: 11px; }
       .participants {
         border: 1px solid var(--border);
         border-radius: 12px;
@@ -314,6 +333,40 @@
               <div class="thread-controls">
                 <button id="toggle-pause">Pause</button>
                 <button id="toggle-discussion">Discussion Off</button>
+              </div>
+            </div>
+            <div>
+              <div class="section-title">Invite agent</div>
+              <div class="invite-panel">
+                <div class="invite-grid">
+                  <div class="row">
+                    <div class="panel-title">Client</div>
+                    <select id="invite-client">
+                      <option value="codex">codex</option>
+                      <option value="claude-code">claude-code</option>
+                      <option value="browser-claude">browser-claude</option>
+                      <option value="custom">custom</option>
+                    </select>
+                  </div>
+                  <div class="row">
+                    <div class="panel-title">Model</div>
+                    <input id="invite-model" placeholder="model id" />
+                  </div>
+                  <div class="row">
+                    <div class="panel-title">Roles</div>
+                    <input id="invite-roles" placeholder="planner, implementer" />
+                  </div>
+                  <div class="row">
+                    <div class="panel-title">Nickname</div>
+                    <input id="invite-nickname" placeholder="optional name" />
+                  </div>
+                  <div class="row">
+                    <div class="panel-title">ID</div>
+                    <input id="invite-id" placeholder="participant id" />
+                  </div>
+                </div>
+                <small>Invites are per-thread and persist in the log.</small>
+                <button id="invite-submit" class="primary">Invite agent</button>
               </div>
             </div>
             <div>
