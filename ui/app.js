@@ -12,8 +12,10 @@ const errorEl = document.getElementById("send-error");
 const participantsEl = document.getElementById("participants");
 const badgePausedEl = document.getElementById("badge-paused");
 const badgeDiscussionEl = document.getElementById("badge-discussion");
+const badgeInvitedAutoEl = document.getElementById("badge-invited-auto");
 const togglePauseBtn = document.getElementById("toggle-pause");
 const toggleDiscussionBtn = document.getElementById("toggle-discussion");
+const toggleInvitedAutoBtn = document.getElementById("toggle-invited-auto");
 const inviteClientEl = document.getElementById("invite-client");
 const inviteModelEl = document.getElementById("invite-model");
 const inviteRolesEl = document.getElementById("invite-roles");
@@ -225,9 +227,12 @@ function renderThreadState() {
   const paused = !!(state && state.paused);
   const discussion = (state && state.discussion) || {};
   const discussionEnabled = !!(discussion.on && discussion.allow_agent_mentions);
+  const invitedAuto = (state && state.invited_auto) || {};
+  const invitedAutoEnabled = !!(invitedAuto.on);
 
   if (badgePausedEl) badgePausedEl.classList.toggle("hidden", !paused);
   if (badgeDiscussionEl) badgeDiscussionEl.classList.toggle("hidden", !discussionEnabled);
+  if (badgeInvitedAutoEl) badgeInvitedAutoEl.classList.toggle("hidden", !invitedAutoEnabled);
 
   if (togglePauseBtn) {
     togglePauseBtn.textContent = paused ? "Resume" : "Pause";
@@ -236,6 +241,10 @@ function renderThreadState() {
   if (toggleDiscussionBtn) {
     toggleDiscussionBtn.textContent = discussionEnabled ? "Discussion Off" : "Discussion On";
     toggleDiscussionBtn.disabled = !currentRoomId;
+  }
+  if (toggleInvitedAutoBtn) {
+    toggleInvitedAutoBtn.textContent = invitedAutoEnabled ? "Invited Auto Off" : "Invited Auto On";
+    toggleInvitedAutoBtn.disabled = !currentRoomId;
   }
 }
 
@@ -535,6 +544,11 @@ toggleDiscussionBtn?.addEventListener("click", () => {
   const discussion = (latestState && latestState.state && latestState.state.discussion) || {};
   const enabled = !!(discussion.on && discussion.allow_agent_mentions);
   sendControlEvent({discussion: {on: !enabled, allow_agent_mentions: !enabled}}).then(loadThreadState);
+});
+toggleInvitedAutoBtn?.addEventListener("click", () => {
+  const invitedAuto = (latestState && latestState.state && latestState.state.invited_auto) || {};
+  const enabled = !!(invitedAuto.on);
+  sendControlEvent({invited_auto: {on: !enabled}}).then(loadThreadState);
 });
 
 inviteSubmitBtn?.addEventListener("click", () => {

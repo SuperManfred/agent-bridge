@@ -41,13 +41,14 @@ Response shape (partial):
 ```json
 {
   "thread": "thread-id",
-  "state": {
-    "paused": false,
-    "muted": ["participant-id"],
-    "discussion": {"on": false, "allow_agent_mentions": false},
-    "participants": {
-      "invited": [
-        {
+    "state": {
+      "paused": false,
+      "muted": ["participant-id"],
+      "discussion": {"on": false, "allow_agent_mentions": false},
+      "invited_auto": {"on": false},
+      "participants": {
+        "invited": [
+          {
           "id": "participant-id",
           "profile": {"client": "codex", "model": "gpt-5.1-codex", "roles": ["planner"], "nickname": "Echo"},
           "invited_by": "participant-id",
@@ -103,6 +104,7 @@ The browser UI is a thread/room viewer + sender with SSE fallback to polling.
   - Evidence: `ui/app.js:145`
 - UI supports inviting participants (persists `control.invite`) and targeting invited participants via the `to` dropdown.
 - Composer supports sending `to` (defaults to `all`); use `to="codex"` / `to="claude-code"` for coordinator-triggered replies, or use `to="all"` with `@mentions` when enabled.
+- UI thread controls include a per-thread toggle for `control.invited_auto` (auto-invoke invited participants for user broadcasts without `@mentions`).
 
 ## Direction (v1 intent)
 

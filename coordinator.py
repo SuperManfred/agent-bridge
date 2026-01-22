@@ -114,6 +114,7 @@ def _default_control_state() -> dict[str, Any]:
         "paused": False,
         "muted": set(),
         "discussion": {"on": False, "allow_agent_mentions": False},
+        "invited_auto": {"on": False},
     }
 
 def _apply_control_content_to_state(state: dict[str, Any], content: dict[str, Any]) -> None:
@@ -149,6 +150,9 @@ def _apply_control_content_to_state(state: dict[str, Any], content: dict[str, An
         on = bool(discussion.get("on", True))
         allow_agent_mentions = bool(discussion.get("allow_agent_mentions", on))
         state["discussion"] = {"on": on, "allow_agent_mentions": allow_agent_mentions}
+    invited_auto = content.get("invited_auto")
+    if isinstance(invited_auto, dict):
+        state["invited_auto"] = {"on": bool(invited_auto.get("on", True))}
 
 def _control_state_before_event(events: list[dict[str, Any]], event_id: str) -> dict[str, Any]:
     state = _default_control_state()
@@ -639,56 +643,60 @@ def main() -> int:
                     )
                     if enable_mentions and allow_mentions_from_sender:
                         mentions = _extract_mentions(evt.get("content"), mention_prefix=mention_prefix)
-                    if not mentions:
-                        continue
+                    if mentions:
+                        presence_snapshot = _fetch_presence(bridge_url, thread_id)
+                        participants = _build_participant_index(invited, presence_snapshot)
+                        resolved, ambiguous, reserved_hits = _resolve_mentions(mentions, participants)
+                        # Prevent "self-wake" loops (an agent mentioning itself in its reply).
+                        resolved = {pid for pid in resolved if pid.lower() != evt_from.lower()}
 
-                    presence_snapshot = _fetch_presence(bridge_url, thread_id)
-                    participants = _build_participant_index(invited, presence_snapshot)
-                    resolved, ambiguous, reserved_hits = _resolve_mentions(mentions, participants)
-                    # Prevent "self-wake" loops (an agent mentioning itself in its reply).
-                    resolved = {pid for pid in resolved if pid.lower() != evt_from.lower()}
+                        if evt_from == "user" and reserved_hits:
+                            reserved_list = ", ".join(f"@{m}" for m in sorted(reserved_hits))
+                            _append_event(
+                                bridge_url,
+                                thread_id,
+                                {
+                                    "type": "message",
+                                    "from": coordinator_id,
+                                    "to": "user",
+                                    "content": (
+                                        f"Reserved mention(s) {reserved_list} are not supported. "
+                                        "Please mention specific participants (e.g. @codex) or use to=<participant_id>."
+                                    ),
+                                    "meta": {"reply_to": evt_id, "tags": ["coordinator"]},
+                                },
+                            )
 
-                    if evt_from == "user" and reserved_hits:
-                        reserved_list = ", ".join(f"@{m}" for m in sorted(reserved_hits))
-                        _append_event(
-                            bridge_url,
-                            thread_id,
-                            {
-                                "type": "message",
-                                "from": coordinator_id,
-                                "to": "user",
-                                "content": (
-                                    f"Reserved mention(s) {reserved_list} are not supported. "
-                                    "Please mention specific participants (e.g. @codex) or use to=<participant_id>."
-                                ),
-                                "meta": {"reply_to": evt_id, "tags": ["coordinator"]},
-                            },
-                        )
+                        if ambiguous:
+                            lines = []
+                            for mention, ids in sorted(ambiguous.items()):
+                                labels = [f"{pid} — {_participant_display(pid, participants.get(pid, {}))}" for pid in ids]
+                                lines.append(f"@{mention}: {', '.join(labels)}")
+                            _append_event(
+                                bridge_url,
+                                thread_id,
+                                {
+                                    "type": "message",
+                                    "from": coordinator_id,
+                                    "to": "user",
+                                    "content": (
+                                        "Nickname ambiguity. Please clarify by re-sending with to=<participant_id> "
+                                        "or @<participant_id>:\n" + "\n".join(lines)
+                                    ),
+                                    "meta": {"reply_to": evt_id, "tags": ["coordinator"]},
+                                },
+                            )
 
-                    if ambiguous:
-                        lines = []
-                        for mention, ids in sorted(ambiguous.items()):
-                            labels = [f"{pid} — {_participant_display(pid, participants.get(pid, {}))}" for pid in ids]
-                            lines.append(f"@{mention}: {', '.join(labels)}")
-                        _append_event(
-                            bridge_url,
-                            thread_id,
-                            {
-                                "type": "message",
-                                "from": coordinator_id,
-                                "to": "user",
-                                "content": (
-                                    "Nickname ambiguity. Please clarify by re-sending with to=<participant_id> "
-                                    "or @<participant_id>:\n" + "\n".join(lines)
-                                ),
-                                "meta": {"reply_to": evt_id, "tags": ["coordinator"]},
-                            },
-                        )
-
-                    if resolved:
-                        target_agents = sorted([a for a in resolved if a in agents and a in invited])
+                        if resolved:
+                            target_agents = sorted([a for a in resolved if a in agents and a in invited])
+                        else:
+                            target_agents = []
                     else:
-                        target_agents = []
+                        invited_auto = control_state.get("invited_auto", {"on": False})
+                        invited_auto_enabled = bool(invited_auto.get("on")) if isinstance(invited_auto, dict) else False
+                        if not invited_auto_enabled or evt_from != "user":
+                            continue
+                        target_agents = sorted([a for a in invited if a in agents])
 
                     if not target_agents:
                         continue

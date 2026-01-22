@@ -85,6 +85,7 @@ Recommended `content` shapes (exact schema TBD):
 - `{"done": true}`
 - `{"ttl_seconds": 600}`
 - `{"discussion": {"on": true, "allow_agent_mentions": true}}`
+- `{"invited_auto": {"on": true}}`
 - `{"invite": {"participant_id": "participant-id", "profile": {"client": "codex", "model": "gpt-5.2-codex", "roles": ["planner"], "nickname": "optional"}}}`
 
 Note:
@@ -154,6 +155,9 @@ Recommended starting modes:
 
 Rationale:
 - Supports the desired “fluid” collaboration while preserving human steering and preventing chatter.
+
+Per-thread opt-in:
+- When `control.invited_auto.on` is true, implementations MAY auto-invoke invited participants for `from="user"` + `to="all"` messages that contain no explicit `@mentions`.
 
 ## Thread lifecycle
 

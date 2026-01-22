@@ -158,6 +158,7 @@ def _derive_thread_state(events: list[dict]) -> dict:
         "paused": False,
         "muted": set(),
         "discussion": {"on": False, "allow_agent_mentions": False},
+        "invited_auto": {"on": False},
         "invited": {},
     }
     for evt in events:
@@ -222,6 +223,9 @@ def _derive_thread_state(events: list[dict]) -> dict:
             on = bool(discussion.get("on", True))
             allow_agent_mentions = bool(discussion.get("allow_agent_mentions", on))
             state["discussion"] = {"on": on, "allow_agent_mentions": allow_agent_mentions}
+        invited_auto = content.get("invited_auto")
+        if isinstance(invited_auto, dict):
+            state["invited_auto"] = {"on": bool(invited_auto.get("on", True))}
     return state
 
 def _error_409(code: str, message: str, thread_id: str, participant_id: str):
@@ -247,6 +251,9 @@ def get_thread_state_snapshot(thread_id: str) -> dict:
     discussion = state.get("discussion")
     if not isinstance(discussion, dict):
         discussion = {"on": False, "allow_agent_mentions": False}
+    invited_auto = state.get("invited_auto")
+    if not isinstance(invited_auto, dict):
+        invited_auto = {"on": False}
     return {
         "thread": thread_id,
         "state": {
@@ -256,6 +263,7 @@ def get_thread_state_snapshot(thread_id: str) -> dict:
                 "on": bool(discussion.get("on")),
                 "allow_agent_mentions": bool(discussion.get("allow_agent_mentions")),
             },
+            "invited_auto": {"on": bool(invited_auto.get("on"))},
             "participants": {"invited": invited_list},
         },
     }

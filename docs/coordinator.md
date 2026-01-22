@@ -69,6 +69,10 @@ To avoid reintroducing orchestration-like behavior or runaway chatter:
 - If `evt.to == "all"` and there are **no mentions**, the coordinator MUST NOT auto-invoke everyone by default.
 - Optional fanout can be enabled explicitly per thread via a control event, and should remain bounded.
 
+Invited-auto control (Base camp 4):
+- If a thread has `control.invited_auto.on == true`, then `from="user"` + `to="all"` messages **without** `@mentions` SHOULD auto-invoke invited participants.
+- If `@mentions` are present, treat them as explicit targeting (no additional fanout).
+
 ## Discussion mode (opt-in, bounded policy loosening)
 
 By default, the coordinator treats agent-to-agent triggers as dangerous because they can create infinite loops.

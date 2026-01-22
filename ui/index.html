@@ -162,6 +162,7 @@
       .badge.hidden { display: none; }
       .badge.paused { color: var(--warn); border-color: rgba(255,176,32,0.35); background: rgba(255,176,32,0.10); }
       .badge.discussion { color: var(--good); border-color: rgba(53,208,127,0.35); background: rgba(53,208,127,0.10); }
+      .badge.invited-auto { color: var(--accent); border-color: rgba(77,163,255,0.35); background: rgba(77,163,255,0.10); }
       .room-body {
         flex: 1;
         display: grid;
@@ -311,6 +312,7 @@
           <div class="badges">
             <span id="badge-paused" class="badge paused hidden">Paused</span>
             <span id="badge-discussion" class="badge discussion hidden">Discussion</span>
+            <span id="badge-invited-auto" class="badge invited-auto hidden">Invited Auto</span>
           </div>
         </div>
         <div class="room-body">
@@ -333,6 +335,7 @@
               <div class="thread-controls">
                 <button id="toggle-pause">Pause</button>
                 <button id="toggle-discussion">Discussion Off</button>
+                <button id="toggle-invited-auto">Invited Auto Off</button>
               </div>
             </div>
             <div>
