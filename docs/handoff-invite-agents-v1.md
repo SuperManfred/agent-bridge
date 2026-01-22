@@ -2,7 +2,7 @@
 
 This is an implementation-ready handoff for adding “Invite agent” to the UI and making coordinator-invoked agents able to act on the machine by default.
 
-Status: draft, but intended to be directly actionable.
+Status: implemented (see commit `3e3791a`).
 
 ## Problem
 
@@ -206,4 +206,3 @@ T4: Mute/pause
 T5: Multi-agent
 - Invite 2–3 participants with different nicknames/roles.
 - Verify `to` dropdown and mention resolution work without ambiguity.
-

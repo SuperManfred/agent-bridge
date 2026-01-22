@@ -46,3 +46,33 @@ Open question:
 Acceptance criteria (v1 coordinator):
 - A local always-on process can watch thread events and auto-invoke configured harness wrappers for targeted messages.
 - The invoked harness reply is appended back into the same thread with `meta.reply_to` referencing the triggering message.
+
+## Base camp 4: invited thread feels “alive” (opt-in)
+
+Goal:
+- Make small threads feel like real conversation without reintroducing global fanout.
+
+Acceptance criteria:
+- A per-thread control enables “auto-invoke invited participants” for `from="user"` + `to="all"` messages with no explicit `@mentions`.
+- Default remains conservative: off by default, enabled explicitly per thread.
+- Coordinator still invokes **only** invited participants, and respects mute/pause/discussion.
+- UI makes the mode visible and easy to toggle in-thread.
+
+## Base camp 5: invite bootstraps agents (no manual copy/paste)
+
+Goal:
+- Inviting a participant should also make it easy to actually initialize a running client/session.
+
+Acceptance criteria:
+- UI client/model choices are populated from local ai-registry (with fallback to free-text).
+- UI can generate a “Join this thread” command/prompt per invited participant (copy-first MVP).
+- Optionally: one-click “Open Terminal” can be added later, but copy-first must be excellent.
+
+## Base camp 6: readability + response formatting
+
+Goal:
+- Make long-lived threads scannable and comfortable to use.
+
+Acceptance criteria:
+- UI clearly shows replies (`meta.reply_to`) and coordinator-assisted messages (`meta.tags`).
+- Add an “automatic response formatting” policy (role-aware templates) that keeps thread outputs compact and consistent without becoming rigid.

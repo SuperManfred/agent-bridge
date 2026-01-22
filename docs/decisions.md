@@ -35,3 +35,4 @@
 3) **Scaling heuristics**: when does a thread become “large”, and what default behaviors change at that threshold?
 4) **Invite schema**: exact `control` `content` shape for invite/initialize, required fields, and how `participant_id` is assigned.
 5) **Model selection**: how `{client, model}` choices are surfaced in UI and mapped to harness invocation in the coordinator/adapters.
+6) **Small-thread “alive” mode**: what is the minimal per-thread control shape to enable auto-invoking invited participants for `from="user"` + `to="all"` messages (and what, if any, throttling/limits apply)?

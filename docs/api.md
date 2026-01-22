@@ -101,7 +101,8 @@ The browser UI is a thread/room viewer + sender with SSE fallback to polling.
 
 - Uses EventSource on `/threads/<id>/events/stream` and falls back to polling on errors.
   - Evidence: `ui/app.js:145`
-- Composer supports sending `to` (defaults to `all`); use `to="codex"` / `to="claude-code"` for coordinator-triggered replies.
+- UI supports inviting participants (persists `control.invite`) and targeting invited participants via the `to` dropdown.
+- Composer supports sending `to` (defaults to `all`); use `to="codex"` / `to="claude-code"` for coordinator-triggered replies, or use `to="all"` with `@mentions` when enabled.
 
 ## Direction (v1 intent)
 
